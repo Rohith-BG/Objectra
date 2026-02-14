@@ -1,0 +1,25 @@
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import s3Client from "../../configs/s3.client.js";
+import type { PresignedURL } from "../../images/image.types.js";
+import { BAD_REQUEST_ERROR } from "../erros/BadRequest.Error.js";
+
+export async function generatePutObjectPresignedURL(objectKey:string):Promise<PresignedURL>{
+    try{
+        const putObjectCommand : PutObjectCommand = new PutObjectCommand({
+            Bucket:process.env.BUCKET_NAME,
+            Key: objectKey
+        })
+
+        const putObjectPresignedURL : PresignedURL = await getSignedUrl(s3Client,putObjectCommand,{expiresIn:1200})
+
+        if(!putObjectPresignedURL){
+            throw new BAD_REQUEST_ERROR(`Failed to get the presignedURL from S3`)
+        }
+
+        return putObjectPresignedURL
+    }
+    catch(err:any){
+        throw err
+    }    
+}

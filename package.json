@@ -1,0 +1,36 @@
+{
+  "name": "mycloud",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon --trace-deprecation --watch src --ext ts --exec \"node --trace-warnings --loader ts-node/esm src/server.ts\"",
+    "build": "tsc"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.975.0",
+    "@aws-sdk/client-s3": "^3.981.0",
+    "@aws-sdk/lib-dynamodb": "^3.975.0",
+    "@aws-sdk/s3-request-presigner": "^3.981.0",
+    "cors": "^2.8.5",
+    "dynamoose": "^4.0.4",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.3",
+    "dotenv": "^17.2.3",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsc": "^2.0.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
+}
