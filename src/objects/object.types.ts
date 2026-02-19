@@ -1,7 +1,7 @@
-export interface Image{
+export interface Object{
     id?:string,
     name:string,
-    objectKey:string,
+    key:string,
     folderId:string,
     status:string,
     createdAt?:string,
@@ -13,21 +13,25 @@ export enum UploadStatus  {
     uploaded = "UPLOADED"
 }
 
-export type ImageName=string
+export type ObjectName=string
 
-export type ImageId = string
+export type ObjectId = string
 
-export interface ImageIdQueryParam {
+export interface ObjectIdQueryParam {
     id:string
 }
 
-export interface ImageRequestBody  {
+export interface ObjectRequestBody  {
     name:string
 }
 
 export interface FolderIdCursorQueryParam {
     id : string,
     cursor?: string
+}
+
+export interface ObjectIdParam {
+    id : ObjectId
 }
 
 export type PresignedURL = string

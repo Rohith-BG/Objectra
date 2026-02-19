@@ -1,7 +1,7 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand, type PutCommandInput, type QueryCommandInput } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type GetCommandOutput, type PutCommandInput, type QueryCommandInput, type UpdateCommandInput, type UpdateCommandOutput } from "@aws-sdk/lib-dynamodb";
 import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
 import RandomIdGenerator from "../utils/create-randomId.js";
-import { UploadStatus, type Image, type ImageId, type ImageName, type PresignedURL} from "./image.types.js";
+import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL} from "./object.types.js";
 import { dynamoDb } from "../configs/dynamoDb.js";
 import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js";
 import { NOTFOUND_ERROR } from "../utils/erros/NotFound.Error.js";
@@ -9,18 +9,18 @@ import { getFolderById } from "../folders/folder.service.js";
 import { generatePutObjectPresignedURL } from "../utils/S3-PresignedUrl/putObject.js";
 import { generateGetObjectPresignedURL } from "../utils/S3-PresignedUrl/getObject.js";
 import CursorCodec from "../utils/cursorCodec.js";
-import { string } from "zod";
+import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 
 
-export async function addImage(imageName:ImageName,folderId:FolderId):Promise<Image>{
+export async function addObject(objectName:ObjectName,folderId:FolderId):Promise<Object>{
     try{
         const folder = await getFolderById(folderId);
 
-        const image : Image = {
-            id:`Image@${RandomIdGenerator.getId()}`,
-            objectKey:`${imageName}@${RandomIdGenerator.getId()}`,
+        const object : Object = {
+            id:`Object@${RandomIdGenerator.getId()}`,
+            key:`${objectName}@${RandomIdGenerator.getId()}`,
             folderId:folderId,
-            name:imageName,
+            name:objectName,
             status:UploadStatus.pending,
             createdAt:new Date().toISOString(),
             updatedAt:new Date().toISOString()
@@ -28,7 +28,7 @@ export async function addImage(imageName:ImageName,folderId:FolderId):Promise<Im
 
         const putCommand : PutCommand = new PutCommand({
             TableName:process.env.IMAGES_TABLE,
-            Item:image
+            Item:object
         })
 
         const response = await dynamoDb.send(putCommand)
@@ -38,166 +38,171 @@ export async function addImage(imageName:ImageName,folderId:FolderId):Promise<Im
         }
 
 
-        return image as Image
+        return object as Object
     }
     catch(err:any){
-        if(err?.name=="ResourceNotFoundException"){
+        if(err instanceof ResourceNotFoundException){
             throw new BAD_REQUEST_ERROR(`The requested resource table not exists`)
         }
         throw err
     }
-
 }
 
-export async function getImageById(imageId:ImageId):Promise<Image>{
+export async function getObjectById(objectId:ObjectId):Promise<Object>{
     try{
         
-        const input = {
+        const getCommandInput : GetCommandInput = {
             TableName:process.env.IMAGES_TABLE,
             Key:{
-                id:imageId
+                id:objectId
             }
         }
 
-        const response = await dynamoDb.send(new GetCommand(input))
+        const response : GetCommandOutput = await dynamoDb.send(new GetCommand(getCommandInput))
 
         if(!response?.Item){
-            throw new NOTFOUND_ERROR(`Image with the id is not found`)
+            throw new NOTFOUND_ERROR(`Object with the id is not found`)
         }
 
-        const image = response?.Item
+        const object = response?.Item
 
-        return image as Image
+        return object as Object
     }
     catch(err:any){
         throw err
     }
 }
 
-export async function updateImageNameById(imageId:ImageId,imageName:ImageName):Promise<Image>{
+export async function updateObjectNameById(objectId:ObjectId,objectName:ObjectName):Promise<Object>{
     try{
-        const input = {
+        const object : Object= await getObjectById(objectId)
+
+        const updateCommandInput : UpdateCommandInput = {
             TableName:process.env.IMAGES_TABLE,
             Key:{
-                id:imageId
+                id:objectId
             },
-            UpdateExpression:"set #name=:name",
+            UpdateExpression:"set #name=:name , #updatedAt=:updatedAt",
             ExpressionAttributeNames:{
-                "#name": "name"
+                "#name": "name",
+                "#updatedAt" :"updatedAt"
             },
             ExpressionAttributeValues:{
-                ":name":imageName
+                ":name":objectName,
+                ":updatedAt":new Date().toString()
             },
             ConditionExpression:"attribute_exists(id)",
             ReturnValues:'ALL_NEW' as const
         }
 
-        const response = await dynamoDb.send(new UpdateCommand(input))
+        const updateCommandOutput : UpdateCommandOutput = await dynamoDb.send(new UpdateCommand(updateCommandInput))
 
-        if(!response?.Attributes){
+        if(!updateCommandOutput?.Attributes){
             throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
         }
 
-        const image = response?.Attributes
+        const updatedObject = updateCommandOutput?.Attributes
     
-        return image as Image
+        return updatedObject as Object
 
     }
     catch(err:any){
-        if(err?.name=="ConditionalCheckFailedException"){
-            throw new NOTFOUND_ERROR(`Image with the id is not found to update`)
+        if(err instanceof ConditionalCheckFailedException){
+            throw new NOTFOUND_ERROR(`Object with the id is not found to update`)
+        }
+        else if(err instanceof NOTFOUND_ERROR){
+            throw new NOTFOUND_ERROR(`Failed to update as object with the id not found`)
         }
         else throw err
     }
 }
 
-export async function updateImageUploadStatusById(imageId:ImageId,status:string):Promise<Image>{
+// export async function updateObjectUploadStatusById(objectId:ObjectId,status:string):Promise<Object>{
+//     try{
+//         const input = {
+//             TableName:process.env.IMAGES_TABLE,
+//             Key:{
+//                 id:imageId
+//             },
+//             UpdateExpression:"set #status=:status",
+//             ExpressionAttributeNames:{
+//                 "#status":"status"
+//             },
+//             ExpressionAttributeValues:{
+//                 ":status":status
+//             },
+//             ConditionExpression:"attribute_exists(id)",
+//             ReturnValues:"ALL_NEW" as const
+//         }
+
+//         const response = await dynamoDb.send(new UpdateCommand(input))
+
+//         if(!response?.Attributes){
+//             throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
+//         }
+
+//         const image = response?.Attributes
+
+//         return image as Image
+//     }
+//     catch(err:any){
+//         if(err?.name=="ConditionalCheckFailedException"){
+//             throw new NOTFOUND_ERROR(`Image with the id not exists`)
+//         }
+//         else throw err
+//     }
+// }
+
+export async function deleteObjectById(objectId:ObjectId):Promise<Object>{
     try{
-        const input = {
+        const deleteCommandInput : DeleteCommandInput = {
             TableName:process.env.IMAGES_TABLE,
             Key:{
-                id:imageId
-            },
-            UpdateExpression:"set #status=:status",
-            ExpressionAttributeNames:{
-                "#status":"status"
-            },
-            ExpressionAttributeValues:{
-                ":status":status
-            },
-            ConditionExpression:"attribute_exists(id)",
-            ReturnValues:"ALL_NEW" as const
-        }
-
-        const response = await dynamoDb.send(new UpdateCommand(input))
-
-        if(!response?.Attributes){
-            throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
-        }
-
-        const image = response?.Attributes
-
-        return image as Image
-    }
-    catch(err:any){
-        if(err?.name=="ConditionalCheckFailedException"){
-            throw new NOTFOUND_ERROR(`Image with the id not exists`)
-        }
-        else throw err
-    }
-}
-
-export async function deleteImageById(imageId:ImageId):Promise<Image>{
-    try{
-        const input = {
-            TableName:process.env.IMAGES_TABLE,
-            Key:{
-                id:imageId
+                id:objectId
             },
             ConditionExpression:"attribute_exists(id)",
             ReturnValues:"ALL_OLD" as const
         }
 
-        const response = await dynamoDb.send(new DeleteCommand(input))
+        const deleteCommandOutput : DeleteCommandOutput = await dynamoDb.send(new DeleteCommand(deleteCommandInput))
 
-        const deletedImage  = response?.Attributes
+        const deletedObject  = deleteCommandOutput?.Attributes
 
-        return deletedImage as Image
+        return deletedObject as Object
     }
     catch(err:any){
-        if(err?.name=="ConditionalCheckFailedException"){
-            throw new NOTFOUND_ERROR(`Image with the id is not found to delete`)
+        if(err instanceof ConditionalCheckFailedException){
+            throw new NOTFOUND_ERROR(`Object with the id is not found to delete`)
         }
         else throw err
     }
 }
 
 
-export async function getPutObjectPresignedURL(imageName:ImageName,folderId:FolderId):Promise<PresignedURL>{
+export async function getPutObjectPresignedURL(objectName:ObjectName,folderId:FolderId):Promise<PresignedURL>{
     try{
         const folder : Folder = await getFolderById(folderId)
 
-        const image = await addImage(imageName,folderId)
+        const object : Object = await addObject(objectName,folderId)
 
-        const putObjectPresignedURL = await generatePutObjectPresignedURL(image?.objectKey)
+        const putObjectPresignedURL = await generatePutObjectPresignedURL(object?.key)
 
         return putObjectPresignedURL ;
-
     }
     catch(err:any){
         throw err ;
     }
 }
 
-export async function getObjectPresignedURL(imageId:ImageId):Promise<PresignedURL>{
+export async function getObjectPresignedURL(objectId:ObjectId):Promise<PresignedURL>{
     try{
-        const image : Image = await getImageById(imageId)
+        const object : Object = await getObjectById(objectId)
 
-        if(image?.status===UploadStatus.pending){
-            throw new BAD_REQUEST_ERROR(`Cannot get presignedURL as image not exists in the bucket`)
+        if(object?.status===UploadStatus.pending){
+            throw new BAD_REQUEST_ERROR(`Cannot get presignedURL as object not exists in the bucket`)
         }
         
-        const objectKey = image?.objectKey
+        const objectKey = object?.key
 
         const presignedURL : PresignedURL = await generateGetObjectPresignedURL(objectKey)
 
@@ -208,18 +213,18 @@ export async function getObjectPresignedURL(imageId:ImageId):Promise<PresignedUR
     }
 }
 
-export async function getPresignedUrl(imageId:ImageId):Promise<PresignedURL>{
+export async function getPresignedUrl(objectId:ObjectId):Promise<PresignedURL>{
     try{
-        const image : Image = await getImageById(imageId)
+        const object : Object = await getObjectById(objectId)
 
-        if(image && image?.status!=UploadStatus?.pending){
+        if(object && object?.status!=UploadStatus?.pending){
             throw new BAD_REQUEST_ERROR(`Cannot get the presigned url for the uploaded image`)
         }
 
-        const objectKey : string = image?.objectKey
+        const objectKey : string = object?.key
 
         if(objectKey===undefined){
-            throw new BAD_REQUEST_ERROR(`ObjectKey is undefined,presigned cannot be genearated without objectKey`)
+            throw new BAD_REQUEST_ERROR(`ObjectKey is undefined,presignedURL cannot be genearated without objectKey`)
         }
 
         const presignedURL : PresignedURL = await generatePutObjectPresignedURL(objectKey)
@@ -232,7 +237,7 @@ export async function getPresignedUrl(imageId:ImageId):Promise<PresignedURL>{
     }
 }
 
-export async function fetchImagesByFolderId(folderId:FolderId,cursor:Cursor){
+export async function fetchObjectsByFolderId(folderId:FolderId,cursor:Cursor){
     try{
 
         const folder = await getFolderById(folderId)
@@ -252,7 +257,7 @@ export async function fetchImagesByFolderId(folderId:FolderId,cursor:Cursor){
             },
             ExpressionAttributeValues :{
                 ":id": folder?.id,
-                ":status" : UploadStatus.uploaded
+                ":status" : UploadStatus?.uploaded
             },
             Limit : 10 ,
             ExclusiveStartKey : decodedCursor
@@ -264,12 +269,12 @@ export async function fetchImagesByFolderId(folderId:FolderId,cursor:Cursor){
             throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
         }
 
-        const images = queryResult?.Items ?? []
+        const objects = queryResult?.Items ?? []
 
         const lastEvaluatedKey = queryResult?.LastEvaluatedKey ? CursorCodec.encode(queryResult?.LastEvaluatedKey) : undefined
 
         return  {
-            images,
+            objects,
             lastEvaluatedKey
         }
     }
@@ -278,7 +283,7 @@ export async function fetchImagesByFolderId(folderId:FolderId,cursor:Cursor){
     }
 }
 
-export async function fetchPendingImagesByFolderId(folderId:FolderId,cursor:Cursor){
+export async function fetchPendingObjectsByFolderId(folderId:FolderId,cursor:Cursor){
     try{
         const folder = await getFolderById(folderId)
 
@@ -309,12 +314,12 @@ export async function fetchPendingImagesByFolderId(folderId:FolderId,cursor:Curs
             throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
         }
 
-        const images = queryResult?.Items ?? []
+        const objects = queryResult?.Items ?? []
 
         const lastEvaluatedKey = queryResult?.LastEvaluatedKey ? CursorCodec.encode(queryResult?.LastEvaluatedKey) : undefined
 
         return  {
-            images,
+            objects,
             lastEvaluatedKey
         }
     }

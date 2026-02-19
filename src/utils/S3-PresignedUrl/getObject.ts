@@ -1,5 +1,5 @@
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import type { PresignedURL } from "../../images/image.types.js";
+import type { PresignedURL } from "../../objects/object.types.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3Client from "../../configs/s3.client.js";
 import { BAD_REQUEST_ERROR } from "../erros/BadRequest.Error.js";
