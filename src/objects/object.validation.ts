@@ -1,7 +1,7 @@
 import {z} from "zod"
-import { VALIDATION_ERROR } from "../utils/erros/Validation.Error.js"
+import { VALIDATION_ERROR } from "../utils/errors/validation.error.js"
 import type { ObjectId, ObjectName } from "./object.types.js"
-import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js"
+import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js"
 
 export  function validateObjectName(objectName:string):ObjectName{
     try{

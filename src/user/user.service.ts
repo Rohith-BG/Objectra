@@ -1,4 +1,4 @@
-import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js";
+import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js";
 import UserModel from "./user.model.js"
 import type {User} from "./user.type.js"
 

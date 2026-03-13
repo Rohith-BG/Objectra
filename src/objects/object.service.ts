@@ -1,15 +1,22 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type GetCommandOutput, type PutCommandInput, type QueryCommandInput, type UpdateCommandInput, type UpdateCommandOutput } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, QueryCommand, UpdateCommand, type GetCommandInput, type GetCommandOutput, type QueryCommandInput, type UpdateCommandInput, type UpdateCommandOutput } from "@aws-sdk/lib-dynamodb";
 import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
-import RandomIdGenerator from "../utils/create-randomId.js";
+import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL} from "./object.types.js";
-import { dynamoDb } from "../configs/dynamoDb.js";
-import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js";
-import { NOTFOUND_ERROR } from "../utils/erros/NotFound.Error.js";
+import  DynamoDbClient from "../configs/DynamoDb.client.js";
+import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js";
+import { NOTFOUND_ERROR } from "../utils/errors/notfound.error.js";
 import { getFolderById } from "../folders/folder.service.js";
 import { generatePutObjectPresignedURL } from "../utils/S3-PresignedUrl/putObject.js";
 import { generateGetObjectPresignedURL } from "../utils/S3-PresignedUrl/getObject.js";
-import CursorCodec from "../utils/cursorCodec.js";
+import CursorCodec from "../utils/helpers/cursorCodec.helper.js";
 import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
+import { DescribeExecutionCommand, StartExecutionCommand, type DescribeActivityCommandOutput, type DescribeExecutionCommandInput, type DescribeExecutionCommandOutput, type StartExecutionCommandInput, type StartExecutionCommandOutput } from "@aws-sdk/client-sfn";
+import StepFunctionClient from "../configs/stepFunction.client.js";
+import { POLL_CONFIG, TERMINAL_ERROR_STATUSES, type DeleteStepFunctionInput, type TerminalErrorStatus } from "../types/stepFunction.types.js";
+import { computeDuration, sleep, toExecutionStatus } from "../utils/helpers/stepFunction.helpers.js";
+import { StepFunctionExecutionError } from "../utils/errors/stepFunctionExecution.error.js";
+import RedisClient from "../configs/Redis.client.js";
+import { OBJECT_CACHE } from "../utils/constants/cache.constants.js";
 
 
 export async function addObject(objectName:ObjectName,folderId:FolderId):Promise<Object>{
@@ -31,12 +38,7 @@ export async function addObject(objectName:ObjectName,folderId:FolderId):Promise
             Item:object
         })
 
-        const response = await dynamoDb.send(putCommand)
-
-        if(response?.$metadata?.httpStatusCode!==200){
-            throw new BAD_REQUEST_ERROR(`Failed to create the image`)
-        }
-
+        const response = await DynamoDbClient.send(putCommand)
 
         return object as Object
     }
@@ -50,6 +52,12 @@ export async function addObject(objectName:ObjectName,folderId:FolderId):Promise
 
 export async function getObjectById(objectId:ObjectId):Promise<Object>{
     try{
+
+        const cachedObject  = await RedisClient.get(objectId)
+
+        if(cachedObject){
+            return JSON.parse(cachedObject)
+        }
         
         const getCommandInput : GetCommandInput = {
             TableName:process.env.IMAGES_TABLE,
@@ -58,13 +66,20 @@ export async function getObjectById(objectId:ObjectId):Promise<Object>{
             }
         }
 
-        const response : GetCommandOutput = await dynamoDb.send(new GetCommand(getCommandInput))
+        const getCommandOutput : GetCommandOutput = await DynamoDbClient.send(new GetCommand(getCommandInput))
 
-        if(!response?.Item){
+        if(!getCommandOutput?.Item){
             throw new NOTFOUND_ERROR(`Object with the id is not found`)
         }
 
-        const object = response?.Item
+        const object = getCommandOutput?.Item
+
+        await RedisClient.set(
+            objectId,
+            JSON.stringify(object),
+            "EX",
+            OBJECT_CACHE?.OBJECT_TTL
+        );
 
         return object as Object
     }
@@ -73,119 +88,66 @@ export async function getObjectById(objectId:ObjectId):Promise<Object>{
     }
 }
 
-export async function updateObjectNameById(objectId:ObjectId,objectName:ObjectName):Promise<Object>{
-    try{
-        const object : Object= await getObjectById(objectId)
-
-        const updateCommandInput : UpdateCommandInput = {
-            TableName:process.env.IMAGES_TABLE,
-            Key:{
-                id:objectId
-            },
-            UpdateExpression:"set #name=:name , #updatedAt=:updatedAt",
-            ExpressionAttributeNames:{
-                "#name": "name",
-                "#updatedAt" :"updatedAt"
-            },
-            ExpressionAttributeValues:{
-                ":name":objectName,
-                ":updatedAt":new Date().toString()
-            },
-            ConditionExpression:"attribute_exists(id)",
-            ReturnValues:'ALL_NEW' as const
-        }
-
-        const updateCommandOutput : UpdateCommandOutput = await dynamoDb.send(new UpdateCommand(updateCommandInput))
-
-        if(!updateCommandOutput?.Attributes){
-            throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
-        }
-
-        const updatedObject = updateCommandOutput?.Attributes
-    
-        return updatedObject as Object
-
-    }
-    catch(err:any){
-        if(err instanceof ConditionalCheckFailedException){
-            throw new NOTFOUND_ERROR(`Object with the id is not found to update`)
-        }
-        else if(err instanceof NOTFOUND_ERROR){
-            throw new NOTFOUND_ERROR(`Failed to update as object with the id not found`)
-        }
-        else throw err
-    }
-}
-
-// export async function updateObjectUploadStatusById(objectId:ObjectId,status:string):Promise<Object>{
+// this functionality is inconsistent as the name is changed in the DB but the S3 still contains the old name after the updation
+// export async function updateObjectNameById(objectId:ObjectId,objectName:ObjectName):Promise<Object>{
 //     try{
-//         const input = {
+//         const updateCommandInput : UpdateCommandInput = {
 //             TableName:process.env.IMAGES_TABLE,
 //             Key:{
-//                 id:imageId
+//                 id:objectId
 //             },
-//             UpdateExpression:"set #status=:status",
+//             UpdateExpression:"set #name=:name , #updatedAt=:updatedAt",
 //             ExpressionAttributeNames:{
-//                 "#status":"status"
+//                 "#name": "name",
+//                 "#updatedAt" :"updatedAt"
 //             },
 //             ExpressionAttributeValues:{
-//                 ":status":status
+//                 ":name":objectName,
+//                 ":updatedAt":new Date().toString()
 //             },
 //             ConditionExpression:"attribute_exists(id)",
-//             ReturnValues:"ALL_NEW" as const
+//             ReturnValues:'ALL_NEW' as const
 //         }
 
-//         const response = await dynamoDb.send(new UpdateCommand(input))
+//         const updateCommandOutput : UpdateCommandOutput = await DynamoDbClient.send(new UpdateCommand(updateCommandInput))
 
-//         if(!response?.Attributes){
+//         if(!updateCommandOutput?.Attributes){
 //             throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
 //         }
 
-//         const image = response?.Attributes
+//         const updatedObject = updateCommandOutput?.Attributes as Object
 
-//         return image as Image
+//         const isObjectExistsInCache 
+    
+//         return updatedObject 
+
 //     }
 //     catch(err:any){
-//         if(err?.name=="ConditionalCheckFailedException"){
-//             throw new NOTFOUND_ERROR(`Image with the id not exists`)
+//         if(err instanceof ConditionalCheckFailedException){
+//             throw new NOTFOUND_ERROR(`Object with the id is not found to update`)
+//         }
+//         else if(err instanceof NOTFOUND_ERROR){
+//             throw new NOTFOUND_ERROR(`Failed to update as object with the id not found`)
 //         }
 //         else throw err
 //     }
 // }
 
-export async function deleteObjectById(objectId:ObjectId):Promise<Object>{
-    try{
-        const deleteCommandInput : DeleteCommandInput = {
-            TableName:process.env.IMAGES_TABLE,
-            Key:{
-                id:objectId
-            },
-            ConditionExpression:"attribute_exists(id)",
-            ReturnValues:"ALL_OLD" as const
-        }
-
-        const deleteCommandOutput : DeleteCommandOutput = await dynamoDb.send(new DeleteCommand(deleteCommandInput))
-
-        const deletedObject  = deleteCommandOutput?.Attributes
-
-        return deletedObject as Object
-    }
-    catch(err:any){
-        if(err instanceof ConditionalCheckFailedException){
-            throw new NOTFOUND_ERROR(`Object with the id is not found to delete`)
-        }
-        else throw err
-    }
-}
-
-
 export async function getPutObjectPresignedURL(objectName:ObjectName,folderId:FolderId):Promise<PresignedURL>{
     try{
+        
         const folder : Folder = await getFolderById(folderId)
 
         const object : Object = await addObject(objectName,folderId)
 
         const putObjectPresignedURL = await generatePutObjectPresignedURL(object?.key)
+
+        await RedisClient.set(
+            OBJECT_CACHE.PUT_OBJECT_PRESIGNED_URL(object?.id as ObjectId),
+            putObjectPresignedURL,
+            "EX",
+            OBJECT_CACHE.PRESIGNED_URL_TTL
+        )
 
         return putObjectPresignedURL ;
     }
@@ -196,6 +158,12 @@ export async function getPutObjectPresignedURL(objectName:ObjectName,folderId:Fo
 
 export async function getObjectPresignedURL(objectId:ObjectId):Promise<PresignedURL>{
     try{
+        const cachedPresignedUrl : PresignedURL | null = await RedisClient.get(OBJECT_CACHE.GET_OBJECT_PRESIGNED_URL(objectId))
+
+        if(cachedPresignedUrl) {
+            return cachedPresignedUrl 
+        }
+
         const object : Object = await getObjectById(objectId)
 
         if(object?.status===UploadStatus.pending){
@@ -206,6 +174,13 @@ export async function getObjectPresignedURL(objectId:ObjectId):Promise<Presigned
 
         const presignedURL : PresignedURL = await generateGetObjectPresignedURL(objectKey)
 
+        await RedisClient.set(
+            OBJECT_CACHE.GET_OBJECT_PRESIGNED_URL(objectId),
+            presignedURL,
+            "EX",
+            OBJECT_CACHE.PRESIGNED_URL_TTL  
+        )
+
         return presignedURL
     }
     catch(err:any){
@@ -213,8 +188,14 @@ export async function getObjectPresignedURL(objectId:ObjectId):Promise<Presigned
     }
 }
 
-export async function getPresignedUrl(objectId:ObjectId):Promise<PresignedURL>{
+export async function getPresignedUrlForPendingUploads(objectId:ObjectId):Promise<PresignedURL>{
     try{
+        const cachedPresignedUrl : PresignedURL | null = await RedisClient.get(OBJECT_CACHE.PUT_OBJECT_PRESIGNED_URL(objectId))
+
+        if(cachedPresignedUrl){
+            return cachedPresignedUrl
+        }
+        
         const object : Object = await getObjectById(objectId)
 
         if(object && object?.status!=UploadStatus?.pending){
@@ -229,6 +210,13 @@ export async function getPresignedUrl(objectId:ObjectId):Promise<PresignedURL>{
 
         const presignedURL : PresignedURL = await generatePutObjectPresignedURL(objectKey)
 
+        await RedisClient.set(
+            OBJECT_CACHE.PUT_OBJECT_PRESIGNED_URL(objectId),
+            presignedURL ,
+            "EX",
+            OBJECT_CACHE.PRESIGNED_URL_TTL
+        )
+
         return presignedURL
 
     }
@@ -237,7 +225,7 @@ export async function getPresignedUrl(objectId:ObjectId):Promise<PresignedURL>{
     }
 }
 
-export async function fetchObjectsByFolderId(folderId:FolderId,cursor:Cursor){
+export async function getUploadedObjectsByFolderId(folderId:FolderId,cursor:Cursor){
     try{
 
         const folder = await getFolderById(folderId)
@@ -248,7 +236,7 @@ export async function fetchObjectsByFolderId(folderId:FolderId,cursor:Cursor){
             decodedCursor = CursorCodec.decode(cursor)
         }
         
-        const input : QueryCommandInput = {
+        const queryCommandInput : QueryCommandInput = {
             TableName : process.env.IMAGES_TABLE,
             IndexName : process.env.FOLDERID_INDEX,
             KeyConditionExpression : "folderId=:id AND #status=:status",
@@ -263,15 +251,15 @@ export async function fetchObjectsByFolderId(folderId:FolderId,cursor:Cursor){
             ExclusiveStartKey : decodedCursor
         }
 
-        const queryResult = await dynamoDb.send(new QueryCommand(input))
+        const queryCommandOutput = await DynamoDbClient.send(new QueryCommand(queryCommandInput))
 
-        if(!queryResult?.Items || queryResult?.Items.length === 0){
+        if(!queryCommandOutput?.Items || queryCommandOutput?.Items.length === 0){
             throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
         }
 
-        const objects = queryResult?.Items ?? []
+        const objects = queryCommandOutput?.Items ?? []
 
-        const lastEvaluatedKey = queryResult?.LastEvaluatedKey ? CursorCodec.encode(queryResult?.LastEvaluatedKey) : undefined
+        const lastEvaluatedKey = queryCommandOutput?.LastEvaluatedKey ? CursorCodec.encode(queryCommandOutput?.LastEvaluatedKey) : undefined
 
         return  {
             objects,
@@ -308,7 +296,7 @@ export async function fetchPendingObjectsByFolderId(folderId:FolderId,cursor:Cur
             ExclusiveStartKey : decodedCursor
         }
 
-        const queryResult = await dynamoDb.send(new QueryCommand(input))
+        const queryResult = await DynamoDbClient.send(new QueryCommand(input))
 
         if(!queryResult?.Items || queryResult?.Items.length === 0){
             throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
@@ -327,3 +315,136 @@ export async function fetchPendingObjectsByFolderId(folderId:FolderId,cursor:Cur
         throw err
     }
 }
+
+export async function deleteObjectById(objectId:ObjectId){
+    try {
+        const object: Object = await getObjectById(objectId)
+
+        const stepFunctionInput: DeleteStepFunctionInput = {
+            objectId:objectId,
+            S3ObjectKey : object?.key,
+        }
+    
+        const startCommandInput: StartExecutionCommandInput = {
+            stateMachineArn : process.env.AWS_STEPFUNCTION_ARN,
+            input:JSON.stringify(stepFunctionInput)
+        };
+
+        const startResponse: StartExecutionCommandOutput = await StepFunctionClient.send(
+            new StartExecutionCommand(startCommandInput)
+        );
+
+        const executionArn: string = startResponse?.executionArn!;
+
+        let   currentDelay : number = POLL_CONFIG.initialDelayMs;
+        const pollStarted  : number = Date.now();
+
+        for (let attempt = 1; attempt <= POLL_CONFIG.maxAttempts; attempt++) {
+
+            const describeCommandInput: DescribeExecutionCommandInput = { executionArn };
+
+            const describeResponse: DescribeExecutionCommandOutput = await StepFunctionClient.send(
+                new DescribeExecutionCommand(describeCommandInput)
+            );
+
+            const elapsed : number = Date.now() - pollStarted;
+            const status = toExecutionStatus(describeResponse?.status);
+            const durationMs: number = computeDuration(
+                describeResponse?.startDate,
+                describeResponse?.stopDate,
+                elapsed
+            );
+
+
+            if (status === "SUCCEEDED") {
+            
+                const output: Record<string, unknown> | null = describeResponse.output
+                ? (JSON.parse(describeResponse.output) as Record<string, unknown>)
+                : null;
+
+                await Promise.all([
+                    RedisClient.del(objectId),
+                    RedisClient.del(OBJECT_CACHE.PUT_OBJECT_PRESIGNED_URL(objectId)),
+                    RedisClient.del(OBJECT_CACHE.PUT_OBJECT_PRESIGNED_URL(objectId)),
+                ]);
+
+
+                return {
+                    success : true,
+                    executionArn,
+                    output,
+                    durationMs,
+                    attempts : attempt,
+                };
+            }
+
+
+            if (TERMINAL_ERROR_STATUSES.has(status as TerminalErrorStatus)) {
+                // console.error(
+                //   `[deleteObjectById] Step 3 ❌ ${status} | ` +
+                //   `attempt: ${attempt} | ` +
+                //   `code: ${describeResponse.error ?? "N/A"} | ` +
+                //   `cause: ${describeResponse.cause ?? "N/A"}`
+                // );
+
+                throw new StepFunctionExecutionError({
+                  executionArn,
+                  status : status as TerminalErrorStatus,
+                  code : describeResponse.error ?? "UNKNOWN_ERROR",
+                  cause : describeResponse.cause ?? "No cause provided by the state machine.",
+                  durationMs,
+                  attempts : attempt,
+                });
+            }
+
+            // POLLING_EXHAUSTED — still RUNNING after maxAttempts 
+
+            if (attempt === POLL_CONFIG.maxAttempts) {
+                // console.error(
+                //   `[deleteObjectById] Step 3 ❌ POLLING_EXHAUSTED | ` +
+                //   `attempts: ${attempt} | executionArn: ${executionArn}`
+                // );
+
+                throw new StepFunctionExecutionError({
+                  executionArn,
+                  status : "POLLING_EXHAUSTED",
+                  code : "POLLING_EXHAUSTED",
+                  cause : `Execution did not reach a terminal state within ${POLL_CONFIG.maxAttempts} attempts.`,
+                  durationMs : elapsed,
+                  attempts   : attempt,
+                });
+            }
+
+            // ── RUNNING / PENDING_REDRIVE — wait with backoff, then retry ──────────────
+    
+            // console.log(
+            //   `[deleteObjectById] Step 3 — Still ${status} | ` +
+            //   `waiting ${currentDelay}ms before attempt ${attempt + 1}...`
+            // );
+
+            await sleep(currentDelay);
+
+            currentDelay = Math.min(
+              currentDelay * POLL_CONFIG.backoffMultiplier,
+              POLL_CONFIG.maxDelayMs
+            );
+        }
+
+        // Unreachable at runtime — POLLING_EXHAUSTED throw inside the loop covers
+        // this exit path. Required by TypeScript for exhaustive return analysis.
+        throw new Error(
+           "Unexpected: polling loop exited without resolution"
+        );
+    }
+    catch(err:any){
+    // console.error(
+    //   `[deleteObjectById] ❌ Error caught | id: ${objectId}`,
+    //   err
+    // );
+        throw err 
+    }
+}
+
+
+  
+  

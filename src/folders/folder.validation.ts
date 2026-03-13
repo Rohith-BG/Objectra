@@ -1,7 +1,7 @@
 import {z} from "zod"
 import type { FolderId, FolderName, ParentId } from "./folder.types.js";
-import { VALIDATION_ERROR } from "../utils/erros/Validation.Error.js";
-import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js";
+import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js";
+import { VALIDATION_ERROR } from "../utils/errors/validation.error.js";
 
 export function validateFoldername(folderName:FolderName){
 

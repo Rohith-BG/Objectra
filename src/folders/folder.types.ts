@@ -27,8 +27,8 @@ export interface FolderIdParam{
 }
 
 export interface UpdateParentIdRequestBody{
-    currentParentId : FolderId,
-    newParentId : FolderId
+    parentId : FolderId
+    oldParentId : FolderId
 }
 
 export type Cursor = string | undefined

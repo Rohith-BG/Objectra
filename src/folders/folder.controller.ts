@@ -1,9 +1,8 @@
 import type { Request, Response } from "express";
-import type { CursorQueryParam, Folder, FolderId, FolderIdParam, FolderIdQueryParam, FolderName, FolderNameRequestBody, ParentId, ParentIdQueryParam, UpdateParentIdRequestBody } from "./folder.types.js";
-import { BAD_REQUEST_ERROR } from "../utils/erros/BadRequest.Error.js";
+import type {  Folder, FolderId, FolderIdParam, FolderIdQueryParam, FolderName, FolderNameRequestBody, ParentId, ParentIdQueryParam, UpdateParentIdRequestBody } from "./folder.types.js";
 import { addFolder, deleteFolderById, getAllSubFoldersByParentId, getFolderById, listAllMainFolders, updateFolderNameById, updateParentIdByFolderId } from "./folder.service.js";
 import {  validateFolderId, validateFoldername, validateParentId } from "./folder.validation.js";
-import { STATUSCODE } from "../constants/statusCodes.js";
+import { STATUSCODE } from "../utils/constants/statusCodes.js";
 
 
 export async function createFolder(req:Request,res:Response){
@@ -36,24 +35,6 @@ export async function getFolder(req:Request<{},{},{},FolderIdQueryParam>,res:Res
     }
 }
 
-// export async function getAllFolders(req:Request<{},{},{},CursorQueryParam>,res:Response){
-//     try{
-//         let cursor : string = req.query?.cursor
-
-//         if(!cursor){
-//             throw new BAD_REQUEST_ERROR(`Cursor query param is a required field`)
-//         }
-
-//         cursor = validateCursor(cursor)
-
-//         const paginatedResponse = await listAllFolders(cursor)
-
-//         res.status(200).json(paginatedResponse)
-//     }
-//     catch(err:any){
-//         res.status(err?.statusCode || 400).json(err?.stack)
-//     }
-// }
 export async function getAllMainFolders(req:Request,res:Response){
     try{
         const mainFolders : Folder[] = await listAllMainFolders() 
@@ -97,31 +78,27 @@ export async function updateFolderName(req:Request<FolderIdParam,{},FolderNameRe
 export async function updateParentId(req:Request<FolderIdParam,{},UpdateParentIdRequestBody,{}>,res:Response){
     try{
         const folderId : FolderId = validateFolderId(req?.params?.id)
-        // const currentParentId : FolderId= validateFolderId(req?.body?.currentParentId)
-        const newParentId : FolderId = validateFolderId(req?.body?.newParentId)
+ // have to update the validation of the body into a single function 
+        const newParentId : FolderId = validateFolderId(req?.body?.parentId)
+        const oldParentId : FolderId = validateFolderId(req?.body?.oldParentId)
 
-        const updatedFolder : Folder = await updateParentIdByFolderId(folderId,newParentId)
+        const updatedFolder : Folder = await updateParentIdByFolderId(folderId,oldParentId,newParentId)
 
         res.status(STATUSCODE?.OK).json(updatedFolder)
     }
     catch(err:any){
-        res.status(err?.statusCode||400).json(err?.stack)
+        res.status(err?.statusCode).json(err?.stack)
     }
 }
 
 export async function deleteFolder(req:Request<{},{},{},FolderIdQueryParam>,res:Response){
     try{
-        let folderId:FolderId = req?.query?.id
 
-        if(!folderId){
-            throw new BAD_REQUEST_ERROR(`Query Param of Folder Id is a required field`)
-        }
-
-        folderId = validateFolderId(folderId)
+        const folderId = validateFolderId(req?.query?.id)
 
         const folder :Folder = await deleteFolderById(folderId)
 
-        res.status(200).json(folder)
+        res.status(STATUSCODE?.OK).json(folder)
     }
     catch(err:any){
         res.status(err?.statusCode).json(err?.stack)
