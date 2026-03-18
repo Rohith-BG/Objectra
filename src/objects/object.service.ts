@@ -3,8 +3,8 @@ import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL} from "./object.types.js";
 import  DynamoDbClient from "../configs/DynamoDb.client.js";
-import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js";
-import { NOTFOUND_ERROR } from "../utils/errors/notfound.error.js";
+import { BadRequestError } from "../utils/errors/badrequest.error.js";
+import { NotFoundError } from "../utils/errors/notfound.error.js";
 import { getFolderById } from "../folders/folder.service.js";
 import { generatePutObjectPresignedURL } from "../utils/S3-PresignedUrl/putObject.js";
 import { generateGetObjectPresignedURL } from "../utils/S3-PresignedUrl/getObject.js";
@@ -44,7 +44,7 @@ export async function addObject(objectName:ObjectName,folderId:FolderId):Promise
     }
     catch(err:any){
         if(err instanceof ResourceNotFoundException){
-            throw new BAD_REQUEST_ERROR(`The requested resource table not exists`)
+            throw new BadRequestError(`The requested resource table not exists`)
         }
         throw err
     }
@@ -69,7 +69,7 @@ export async function getObjectById(objectId:ObjectId):Promise<Object>{
         const getCommandOutput : GetCommandOutput = await DynamoDbClient.send(new GetCommand(getCommandInput))
 
         if(!getCommandOutput?.Item){
-            throw new NOTFOUND_ERROR(`Object with the id is not found`)
+            throw new NotFoundError(`Object with the id is not found`)
         }
 
         const object = getCommandOutput?.Item
@@ -167,7 +167,7 @@ export async function getObjectPresignedURL(objectId:ObjectId):Promise<Presigned
         const object : Object = await getObjectById(objectId)
 
         if(object?.status===UploadStatus.pending){
-            throw new BAD_REQUEST_ERROR(`Cannot get presignedURL as object not exists in the bucket`)
+            throw new BadRequestError(`Cannot get presignedURL as object not exists in the bucket`)
         }
         
         const objectKey = object?.key
@@ -199,13 +199,13 @@ export async function getPresignedUrlForPendingUploads(objectId:ObjectId):Promis
         const object : Object = await getObjectById(objectId)
 
         if(object && object?.status!=UploadStatus?.pending){
-            throw new BAD_REQUEST_ERROR(`Cannot get the presigned url for the uploaded image`)
+            throw new BadRequestError(`Cannot get the presigned url for the uploaded image`)
         }
 
         const objectKey : string = object?.key
 
         if(objectKey===undefined){
-            throw new BAD_REQUEST_ERROR(`ObjectKey is undefined,presignedURL cannot be genearated without objectKey`)
+            throw new BadRequestError(`ObjectKey is undefined,presignedURL cannot be genearated without objectKey`)
         }
 
         const presignedURL : PresignedURL = await generatePutObjectPresignedURL(objectKey)
@@ -254,7 +254,7 @@ export async function getUploadedObjectsByFolderId(folderId:FolderId,cursor:Curs
         const queryCommandOutput = await DynamoDbClient.send(new QueryCommand(queryCommandInput))
 
         if(!queryCommandOutput?.Items || queryCommandOutput?.Items.length === 0){
-            throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
+            throw new NotFoundError(`No Uploaded Images with this folderId`)
         }
 
         const objects = queryCommandOutput?.Items ?? []
@@ -299,7 +299,7 @@ export async function fetchPendingObjectsByFolderId(folderId:FolderId,cursor:Cur
         const queryResult = await DynamoDbClient.send(new QueryCommand(input))
 
         if(!queryResult?.Items || queryResult?.Items.length === 0){
-            throw new NOTFOUND_ERROR(`No Uploaded Images with this folderId`)
+            throw new NotFoundError(`No Uploaded Images with this folderId`)
         }
 
         const objects = queryResult?.Items ?? []

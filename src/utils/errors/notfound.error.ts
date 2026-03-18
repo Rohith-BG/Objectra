@@ -1,5 +1,5 @@
 
-export class NOTFOUND_ERROR extends Error{
+export class NotFoundError extends Error{
     public statusCode : number = 404
 
     constructor(errorMessage:string){

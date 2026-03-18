@@ -2,7 +2,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import type { PresignedURL } from "../../objects/object.types.js";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3Client from "../../configs/S3Bucket.client.js";
-import { BAD_REQUEST_ERROR } from "../errors/badrequest.error.js";
+import { BadRequestError } from "../errors/badrequest.error.js";
 
 export async function generateGetObjectPresignedURL(objectKey:string):Promise<PresignedURL> {
     try{
@@ -14,7 +14,7 @@ export async function generateGetObjectPresignedURL(objectKey:string):Promise<Pr
         const getObjectPresignedURL : PresignedURL = await getSignedUrl(s3Client,getObjectCommand,{expiresIn:1200})
 
         if(!getObjectPresignedURL){
-            throw new BAD_REQUEST_ERROR(`Failed to get the presigned URL from the S3`)
+            throw new BadRequestError(`Failed to get the presigned URL from the S3`)
         }
 
         return getObjectPresignedURL

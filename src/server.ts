@@ -38,3 +38,4 @@ startServer()
 7. How to deploy the server in ec2 instance or in ECR / ECS (don't have an idea)
 
 */
+// Have to change the logic in the delete folder to delete the allowed folders in the user attribute when the folder is deleted

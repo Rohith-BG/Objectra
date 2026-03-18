@@ -1,16 +1,16 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type PutCommandOutput, type QueryCommandInput, type UpdateCommandInput } from "@aws-sdk/lib-dynamodb"
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type GetCommandOutput, type PutCommandOutput, type QueryCommandInput, type UpdateCommandInput } from "@aws-sdk/lib-dynamodb"
 import DynamoDbClient from "../configs/DynamoDb.client.js"
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js"
-import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js"
+import { BadRequestError } from "../utils/errors/badrequest.error.js"
 import type { Folder, FolderId, FolderName, ParentId } from "./folder.types.js"
-import { NOTFOUND_ERROR } from "../utils/errors/notfound.error.js"
+import { NotFoundError } from "../utils/errors/notfound.error.js"
 import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb"
 import dotenv from 'dotenv'
 import RedisClient from "../configs/Redis.client.js"
 import { CACHE_KEYS } from "../utils/constants/cache.constants.js"
 import { getFolder } from "./folder.controller.js"
 import { getUploadedObjectsByFolderId } from "../objects/object.service.js"
-import { unknown } from "zod"
+import { promise, unknown } from "zod"
 dotenv.config()
 
 
@@ -41,14 +41,14 @@ export async function addFolder(folderName:string , parentId : ParentId):Promise
     
         return folder
     }
-    catch(err:unknown){
-        if(err instanceof ResourceNotFoundException){
-            throw new BAD_REQUEST_ERROR(`Folder failed to create as the required resource not exists in DB`)
+    catch(error:unknown){
+        if(error instanceof ResourceNotFoundException){
+            throw new BadRequestError(`Folder failed to create as the required resource not exists in DB`)
         }
-        else if(err instanceof NOTFOUND_ERROR){
-            throw new NOTFOUND_ERROR(`Parent folder with id ${parentId} not found`);
+        else if(error instanceof NotFoundError){
+            throw new NotFoundError(`Parent folder with id ${parentId} not found`);
         }
-        else throw err
+        else throw error
     }
 }
 
@@ -73,20 +73,20 @@ export async function getFolderById(folderId:any):Promise<Folder>{
             return JSON.parse(cachedFolder) 
         }
 
-        const input = {
+        const getCommandInput : GetCommandInput = {
             TableName: process.env.FOLDERS_TABLE,
             Key:{
                 id:folderId
             }
         }
 
-        const response = await DynamoDbClient.send(new GetCommand(input))
+        const getCommandOutput : GetCommandOutput = await DynamoDbClient.send(new GetCommand(getCommandInput))
 
-        if(!response?.Item){
-            throw new NOTFOUND_ERROR(`Folder with this id not exists`)
+        if(!getCommandOutput?.Item){
+            throw new NotFoundError(`Folder with this id not exists`)
         }
 
-        const folder = response?.Item
+        const folder = getCommandOutput?.Item as Folder
 
         if (folder.parentId !== "ROOT") {
             await RedisClient.set(
@@ -96,10 +96,42 @@ export async function getFolderById(folderId:any):Promise<Folder>{
             1800 )
         }
     
-        return folder as Folder
+        return folder 
     }
-    catch(err:unknown){
-        throw err
+    catch(error:unknown){
+        throw error
+    }
+}
+
+export async function getFoldersByIds(folderIds:FolderId[]):Promise<Folder[]>{
+    try{
+        if(!folderIds || folderIds.length === 0 ){
+            return []
+        }
+        
+        const folders : PromiseSettledResult<Folder>[] = await Promise.allSettled(
+            folderIds
+            .filter(folderId => folderId !== undefined && folderId !== null)
+            .map((folderId : FolderId)=>{
+                return getFolderById(folderId)
+            })
+        )
+
+        const failedFolderIds = folderIds.filter(
+            (_, index) => folders[index]?.status === "rejected"
+        );
+
+        if(failedFolderIds.length > 0) {
+            throw new NotFoundError(
+                `Following folderId's do not exist: ${failedFolderIds.join(", ")}`
+            );
+        }   
+
+        return folders
+            .map(folder=> (folder as PromiseFulfilledResult<Folder>).value);
+        }
+    catch(error : unknown){
+        throw error
     }
 }
 
@@ -133,8 +165,8 @@ export async function listAllMainFolders():Promise<Folder[]>{
 
         return folders 
     }
-    catch(err:unknown){
-        throw err
+    catch(error:unknown){
+        throw error
     }
 }
 
@@ -172,11 +204,11 @@ export async function getAllSubFoldersByParentId(parentId:ParentId):Promise<Fold
 
         return subFolders
     }
-    catch(err:unknown){
-        if(err instanceof NOTFOUND_ERROR){
-            throw new NOTFOUND_ERROR(`ParentId with this Id not found`)
+    catch(error:unknown){
+        if(error instanceof NotFoundError){
+            throw new NotFoundError(`ParentId with this Id not found`)
         }
-        throw err
+        throw error
     }
 }
 
@@ -221,12 +253,12 @@ export async function updateFolderNameById(folderId:FolderId,folderName:FolderNa
 
         return updatedFolder 
     }
-    catch(err:unknown){
-        if(err instanceof NOTFOUND_ERROR){
-            throw new NOTFOUND_ERROR(`Failed to update as folder with the id not found`)
+    catch(error:unknown){
+        if(error instanceof NotFoundError){
+            throw new NotFoundError(`Failed to update as folder with the id not found`)
         }
         else{
-            throw err
+            throw error
         }
     }
 }
@@ -273,11 +305,11 @@ export async function updateParentIdByFolderId(folderId:FolderId,oldParentId:Fol
 
         return updatedFolder 
     }
-    catch(err:any){
-        if (err instanceof ConditionalCheckFailedException){
-            throw new NOTFOUND_ERROR(`Folder with the requested Id not found`)
+    catch(error:any){
+        if (error instanceof ConditionalCheckFailedException){
+            throw new NotFoundError(`Folder with the requested Id not found`)
         }
-        throw err
+        throw error
     }
 }
 
@@ -288,13 +320,13 @@ export async function deleteFolderById(folderId:FolderId):Promise<Folder>{
         const subFolders : Folder[] = await getAllSubFoldersByParentId(folderId);
 
         if (subFolders.length > 0) {
-            throw new BAD_REQUEST_ERROR(`Folder contains sub folders — remove them before deleting`);
+            throw new BadRequestError(`Folder contains sub folders — remove them before deleting`);
         }
 
         const { objects } = await getUploadedObjectsByFolderId(folderId, undefined);
 
         if (objects.length > 0) {
-            throw new BAD_REQUEST_ERROR(`Folder contains objects — remove them before deleting`);
+            throw new BadRequestError(`Folder contains objects — remove them before deleting`);
         }
         
         const deleteCommandInput : DeleteCommandInput= {
@@ -327,12 +359,12 @@ export async function deleteFolderById(folderId:FolderId):Promise<Folder>{
 
         return deletedFolder 
     }
-    catch(err:any){
-        if(err instanceof ConditionalCheckFailedException){
-            throw new NOTFOUND_ERROR(`Folder with the id is not found`)
+    catch(error:any){
+        if(error instanceof ConditionalCheckFailedException){
+            throw new NotFoundError(`Folder with the id is not found`)
         }
         else{
-            throw err
+            throw error
         }
     }
 }

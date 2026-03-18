@@ -1,8 +1,11 @@
-export class BAD_REQUEST_ERROR extends Error{
-    public statusCode : number = 400
+import { STATUSCODE } from "../constants/statusCodes.js";
+
+export class BadRequestError extends Error{
+    public readonly statusCode : number = STATUSCODE.BAD_REQUEST
 
     constructor(errorMessage:string){
         super(errorMessage)
+        this.name = "BadRequestError"
         Error.captureStackTrace(this,this.constructor);
     }
 }

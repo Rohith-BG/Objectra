@@ -1,13 +1,12 @@
 import {z} from "zod"
 import type { FolderId, FolderName, ParentId } from "./folder.types.js";
-import { BAD_REQUEST_ERROR } from "../utils/errors/badrequest.error.js";
-import { VALIDATION_ERROR } from "../utils/errors/validation.error.js";
+import { BadRequestError } from "../utils/errors/badrequest.error.js";
+import { ValidationError } from "../utils/errors/validation.error.js";
 
 export function validateFoldername(folderName:FolderName){
-
     try{
         if(folderName==undefined){
-            throw new BAD_REQUEST_ERROR(`FolderName is a required field`)
+            throw new BadRequestError(`FolderName is a required field`)
         }
         const validationSchema = z.string(`FolderName should be of type string`)
         .trim()
@@ -16,22 +15,22 @@ export function validateFoldername(folderName:FolderName){
         const validationResponse = validationSchema.safeParse(folderName)
 
         if(!validationResponse.success){
-            throw new VALIDATION_ERROR(
+            throw new ValidationError(
                 validationResponse?.error?.message
             )
         }
 
         return validationResponse?.data
     }
-    catch(err){
-        throw err
+    catch(error : unknown){
+        throw error
     }
 }
 
 export function validateFolderId(folderId:FolderId){
     try{
         if(folderId===undefined){
-            throw new BAD_REQUEST_ERROR(`FolderId is a required field`)
+            throw new BadRequestError(`FolderId is a required field`)
         }
 
         const schema = z.string(`FolderId should be of type string`)
@@ -41,13 +40,13 @@ export function validateFolderId(folderId:FolderId){
         const validationResponse = schema.safeParse(folderId)
 
         if(!validationResponse.success){
-            throw new VALIDATION_ERROR(validationResponse?.error?.issues[0]?.message!)
+            throw new ValidationError(validationResponse?.error?.issues[0]?.message!)
         }
 
         return validationResponse?.data
     }
-    catch(err){
-        throw err
+    catch(error : unknown){
+        throw error
     }
 }
 
@@ -60,13 +59,13 @@ export function validateCursor(cursor : unknown){
         const validationResponse = cursorSchema.safeParse(cursor)
 
         if(!validationResponse?.success){
-            throw new VALIDATION_ERROR(validationResponse?.error?.issues[0]?.message ?? `Validation Failed`)
+            throw new ValidationError(validationResponse?.error?.issues[0]?.message ?? `Validation Failed`)
         }
 
         return validationResponse?.data
     }
-    catch(err:any){
-        throw err
+    catch(error:unknown){
+        throw error
     }
 }
 
@@ -74,7 +73,7 @@ export function validateCursor(cursor : unknown){
 export function validateParentId(parentId:ParentId){
     try{
         if(parentId===undefined){
-            throw new BAD_REQUEST_ERROR(`ParentId is a required field`)
+            throw new BadRequestError(`ParentId is a required field`)
         }
 
         const parentIdSchema = z.string("ParentId must be of type string")
@@ -85,12 +84,12 @@ export function validateParentId(parentId:ParentId){
         const validationResponse = parentIdSchema.safeParse(parentId)
 
         if(validationResponse?.error){
-            throw new VALIDATION_ERROR(validationResponse?.error?.issues[0]?.message!)
+            throw new ValidationError(validationResponse?.error?.issues[0]?.message!)
         }
 
         return validationResponse?.data
     }
-    catch(err:any){
-        throw err
+    catch(error:unknown){
+        throw error
     }
 }

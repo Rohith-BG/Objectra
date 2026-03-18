@@ -68,7 +68,7 @@ export async function updateFolderName(req:Request<FolderIdParam,{},FolderNameRe
 
         const updatedFolder = await updateFolderNameById(folderId,newFolderName)
 
-        res.status(200).json(updatedFolder)
+        res.status(STATUSCODE?.OK).json(updatedFolder)
     }
     catch(err:any){
         res.status(err?.statusCode).json(err?.stack)

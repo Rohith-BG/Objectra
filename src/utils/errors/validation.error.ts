@@ -1,4 +1,4 @@
-export class VALIDATION_ERROR extends Error{
+export class ValidationError extends Error{
     public statusCode : number = 400
 
     constructor(message:string){
