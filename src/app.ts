@@ -4,6 +4,7 @@ import cors from "cors"
 import  folderRoutes  from "./folders/folder.route.js"
 import objectRoutes from "./objects/object.route.js"
 import userRoutes from "./users/user.routes.js"
+import authRoutes from "./auth/auth.routes.js"
 
 const app : Application = express()
 
@@ -13,6 +14,7 @@ app.use(cors());
 app.use('/folders',folderRoutes)
 app.use('/objects',objectRoutes)
 app.use('/users',userRoutes)
+app.use('/auth',authRoutes)
 
 export default app ;
 
