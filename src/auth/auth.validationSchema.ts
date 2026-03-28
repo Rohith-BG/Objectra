@@ -15,3 +15,17 @@ export const LoginUserBodySchema = z.object({
             "Password must contain uppercase, lowercase, number, and special character"
         ),
 })
+
+
+export const refreshTokenCookieSchema = z.object({
+  refreshToken: z
+    .string({error: "Refresh token is required" })
+    .min(1, "Refresh token cannot be empty")
+    .refine(
+      (token) => {
+        const dotIndex = token.indexOf(".");
+        return dotIndex > 0 && token.length > dotIndex + 1;
+      },
+      { message: "Malformed refresh token" }
+    ),
+});

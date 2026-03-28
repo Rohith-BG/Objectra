@@ -1,6 +1,7 @@
+import { BadRequestError } from "../utils/errors/badrequest.error.js";
 import { ValidationError } from "../utils/errors/validation.error.js";
-import type { LoginUserBody } from "./auth.types.js";
-import { LoginUserBodySchema } from "./auth.validationSchema.js";
+import type { LoginUserBody, RefreshTokenCookie } from "./auth.types.js";
+import { LoginUserBodySchema, refreshTokenCookieSchema } from "./auth.validationSchema.js";
 
 
 export function validateLoginUserBody(loginUserBody : unknown):LoginUserBody{
@@ -8,7 +9,7 @@ export function validateLoginUserBody(loginUserBody : unknown):LoginUserBody{
         const validationResult = LoginUserBodySchema.safeParse(loginUserBody)
 
         if(!validationResult.success){
-            throw new ValidationError(validationResult.error.message)
+            throw new BadRequestError(validationResult.error.message)
         }
 
         return validationResult.data as LoginUserBody
@@ -16,4 +17,19 @@ export function validateLoginUserBody(loginUserBody : unknown):LoginUserBody{
     catch(error : unknown){
         throw error
     }
+}
+
+export function validateRefreshTokenCookie(cookies: unknown): RefreshTokenCookie {
+  try {
+    const validationResult = refreshTokenCookieSchema.safeParse(cookies);
+
+    if (!validationResult.success) {
+      throw new BadRequestError(validationResult.error.message);
+    }
+
+    return validationResult.data as RefreshTokenCookie;
+
+  } catch (error: unknown) {
+    throw error;
+  }
 }
