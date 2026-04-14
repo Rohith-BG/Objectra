@@ -9,7 +9,6 @@ import { getFolderById } from "../folders/folder.service.js";
 import { generatePutObjectPresignedURL } from "../utils/S3-PresignedUrl/putObject.js";
 import { generateGetObjectPresignedURL } from "../utils/S3-PresignedUrl/getObject.js";
 import CursorCodec from "../utils/helpers/cursorCodec.helper.js";
-import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 import { DescribeExecutionCommand, StartExecutionCommand, type DescribeActivityCommandOutput, type DescribeExecutionCommandInput, type DescribeExecutionCommandOutput, type StartExecutionCommandInput, type StartExecutionCommandOutput } from "@aws-sdk/client-sfn";
 import StepFunctionClient from "../configs/stepFunction.client.js";
 import { POLL_CONFIG, TERMINAL_ERROR_STATUSES, type DeleteStepFunctionInput, type TerminalErrorStatus } from "../types/stepFunction.types.js";
@@ -17,6 +16,7 @@ import { computeDuration, sleep, toExecutionStatus } from "../utils/helpers/step
 import { StepFunctionExecutionError } from "../utils/errors/stepFunctionExecution.error.js";
 import RedisClient from "../configs/redis.client.js";
 import { OBJECT_CACHE } from "../utils/constants/cache.constants.js";
+import { ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 
 
 export async function addObject(objectName:ObjectName,folderId:FolderId):Promise<Object>{
@@ -34,7 +34,7 @@ export async function addObject(objectName:ObjectName,folderId:FolderId):Promise
         }
 
         const putCommand : PutCommand = new PutCommand({
-            TableName:process.env.IMAGES_TABLE,
+            TableName:process.env.OBJECTS_TABLE,
             Item:object
         })
 
@@ -60,7 +60,7 @@ export async function getObjectById(objectId:ObjectId):Promise<Object>{
         }
         
         const getCommandInput : GetCommandInput = {
-            TableName:process.env.IMAGES_TABLE,
+            TableName:process.env.OBJECTS_TABLE,
             Key:{
                 id:objectId
             }
@@ -88,54 +88,8 @@ export async function getObjectById(objectId:ObjectId):Promise<Object>{
     }
 }
 
-// this functionality is inconsistent as the name is changed in the DB but the S3 still contains the old name after the updation
-// export async function updateObjectNameById(objectId:ObjectId,objectName:ObjectName):Promise<Object>{
-//     try{
-//         const updateCommandInput : UpdateCommandInput = {
-//             TableName:process.env.IMAGES_TABLE,
-//             Key:{
-//                 id:objectId
-//             },
-//             UpdateExpression:"set #name=:name , #updatedAt=:updatedAt",
-//             ExpressionAttributeNames:{
-//                 "#name": "name",
-//                 "#updatedAt" :"updatedAt"
-//             },
-//             ExpressionAttributeValues:{
-//                 ":name":objectName,
-//                 ":updatedAt":new Date().toString()
-//             },
-//             ConditionExpression:"attribute_exists(id)",
-//             ReturnValues:'ALL_NEW' as const
-//         }
-
-//         const updateCommandOutput : UpdateCommandOutput = await DynamoDbClient.send(new UpdateCommand(updateCommandInput))
-
-//         if(!updateCommandOutput?.Attributes){
-//             throw new BAD_REQUEST_ERROR(`Failed to get the updated attributes`)
-//         }
-
-//         const updatedObject = updateCommandOutput?.Attributes as Object
-
-//         const isObjectExistsInCache 
-    
-//         return updatedObject 
-
-//     }
-//     catch(err:any){
-//         if(err instanceof ConditionalCheckFailedException){
-//             throw new NOTFOUND_ERROR(`Object with the id is not found to update`)
-//         }
-//         else if(err instanceof NOTFOUND_ERROR){
-//             throw new NOTFOUND_ERROR(`Failed to update as object with the id not found`)
-//         }
-//         else throw err
-//     }
-// }
-
 export async function getPutObjectPresignedURL(objectName:ObjectName,folderId:FolderId):Promise<PresignedURL>{
     try{
-        
         const folder : Folder = await getFolderById(folderId)
 
         const object : Object = await addObject(objectName,folderId)
@@ -237,7 +191,7 @@ export async function getUploadedObjectsByFolderId(folderId:FolderId,cursor:Curs
         }
         
         const queryCommandInput : QueryCommandInput = {
-            TableName : process.env.IMAGES_TABLE,
+            TableName : process.env.OBJECTS_TABLE,
             IndexName : process.env.FOLDERID_INDEX,
             KeyConditionExpression : "folderId=:id AND #status=:status",
             ExpressionAttributeNames:{
@@ -282,7 +236,7 @@ export async function fetchPendingObjectsByFolderId(folderId:FolderId,cursor:Cur
         }
 
         const input : QueryCommandInput = {
-            TableName : process.env.IMAGES_TABLE,
+            TableName : process.env.OBJECTS_TABLE,
             IndexName : process.env.FOLDERID_INDEX,
             KeyConditionExpression : "folderId = :folderId AND #status = :status",
             ExpressionAttributeNames :{
@@ -380,13 +334,6 @@ export async function deleteObjectById(objectId:ObjectId){
 
 
             if (TERMINAL_ERROR_STATUSES.has(status as TerminalErrorStatus)) {
-                // console.error(
-                //   `[deleteObjectById] Step 3 ❌ ${status} | ` +
-                //   `attempt: ${attempt} | ` +
-                //   `code: ${describeResponse.error ?? "N/A"} | ` +
-                //   `cause: ${describeResponse.cause ?? "N/A"}`
-                // );
-
                 throw new StepFunctionExecutionError({
                   executionArn,
                   status : status as TerminalErrorStatus,
@@ -397,14 +344,7 @@ export async function deleteObjectById(objectId:ObjectId){
                 });
             }
 
-            // POLLING_EXHAUSTED — still RUNNING after maxAttempts 
-
             if (attempt === POLL_CONFIG.maxAttempts) {
-                // console.error(
-                //   `[deleteObjectById] Step 3 ❌ POLLING_EXHAUSTED | ` +
-                //   `attempts: ${attempt} | executionArn: ${executionArn}`
-                // );
-
                 throw new StepFunctionExecutionError({
                   executionArn,
                   status : "POLLING_EXHAUSTED",
@@ -415,13 +355,6 @@ export async function deleteObjectById(objectId:ObjectId){
                 });
             }
 
-            // ── RUNNING / PENDING_REDRIVE — wait with backoff, then retry ──────────────
-    
-            // console.log(
-            //   `[deleteObjectById] Step 3 — Still ${status} | ` +
-            //   `waiting ${currentDelay}ms before attempt ${attempt + 1}...`
-            // );
-
             await sleep(currentDelay);
 
             currentDelay = Math.min(
@@ -430,17 +363,11 @@ export async function deleteObjectById(objectId:ObjectId){
             );
         }
 
-        // Unreachable at runtime — POLLING_EXHAUSTED throw inside the loop covers
-        // this exit path. Required by TypeScript for exhaustive return analysis.
         throw new Error(
            "Unexpected: polling loop exited without resolution"
         );
     }
     catch(err:any){
-    // console.error(
-    //   `[deleteObjectById] ❌ Error caught | id: ${objectId}`,
-    //   err
-    // );
         throw err 
     }
 }
