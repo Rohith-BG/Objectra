@@ -5,9 +5,11 @@ import  folderRoutes  from "./folders/folder.route.js"
 import objectRoutes from "./objects/object.route.js"
 import userRoutes from "./users/user.routes.js"
 import authRoutes from "./auth/auth.routes.js"
+import rateLimiter from "./configs/rateLimiter.js"
 
 const app : Application = express()
 
+app.use(rateLimiter.handle())
 app.use(express.json())
 app.use(cors());
 
