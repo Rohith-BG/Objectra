@@ -5,7 +5,6 @@ import { STATUSCODE } from "../utils/constants/statusCodes.js";
 
 export async function createUser(req:Request,res:Response){
     try{
-        
         const userDetails : CreateUserDto = req.body
 
         const user : User = await createUserService(userDetails)
@@ -29,7 +28,7 @@ export async function getUser(req:Request,res:Response){
         res.status(STATUSCODE.OK).json(user)
     }
     catch(error : any){
-        res.status(error?.statusCode || 400).json(error?.stack)
+        res.status(error?.statusCode).json(error?.stack)
     }
 }
 
