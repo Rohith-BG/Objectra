@@ -1,5 +1,6 @@
 import type z from "zod";
 import type { LoginUserBodySchema, refreshTokenCookieSchema } from "./auth.validationSchema.js";
+import type { UserRole } from "../users/user.type.js";
 
 export type LoginUserBody = z.infer<typeof LoginUserBodySchema>
 
@@ -29,14 +30,6 @@ export type RefreshTokenCookie = z.infer<typeof refreshTokenCookieSchema>;
 
 export type AccessTokenPayload = {
   id:string,
-  role:string,
+  role:UserRole,
   allowedFolders:string[]
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: AccessTokenPayload;
-    }
-  }
 }
