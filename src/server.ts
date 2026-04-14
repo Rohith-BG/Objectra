@@ -1,6 +1,6 @@
 import app from "./app.js"
 import dotenv from "dotenv" 
-import RedisClient from "./configs/Redis.client.js";
+import RedisClient from "./configs/redis.client.js";
 dotenv.config();
 
 async function startServer(){

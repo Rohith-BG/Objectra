@@ -7,7 +7,7 @@ import type { AccessToken, RefreshToken, RefreshTokenItem, RevokeRefreshTokenRes
 import { extractUserIdFromToken, generateAccessToken, generateOpaqueToken, hashToken } from "../utils/jwt/jwt.utils.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import { DeleteCommand, PutCommand, QueryCommand, TransactWriteCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type PutCommandInput, type PutCommandOutput, type QueryCommandInput, type QueryCommandOutput } from "@aws-sdk/lib-dynamodb";
-import DynamoDbClient from "../configs/DynamoDb.client.js";
+import DynamoDbClient from "../configs/dynamoDb.client.js";
 import dotenv from "dotenv"
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 dotenv.config()

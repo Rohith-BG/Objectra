@@ -1,16 +1,14 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type GetCommandOutput, type PutCommandOutput, type QueryCommandInput, type UpdateCommandInput } from "@aws-sdk/lib-dynamodb"
-import DynamoDbClient from "../configs/DynamoDb.client.js"
+import DynamoDbClient from "../configs/dynamoDb.client.js"
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js"
 import { BadRequestError } from "../utils/errors/badrequest.error.js"
 import type { Folder, FolderId, FolderName, ParentId } from "./folder.types.js"
 import { NotFoundError } from "../utils/errors/notfound.error.js"
 import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb"
 import dotenv from 'dotenv'
-import RedisClient from "../configs/Redis.client.js"
+import RedisClient from "../configs/redis.client.js"
 import { CACHE_KEYS } from "../utils/constants/cache.constants.js"
-import { getFolder } from "./folder.controller.js"
 import { getUploadedObjectsByFolderId } from "../objects/object.service.js"
-import { promise, unknown } from "zod"
 dotenv.config()
 
 

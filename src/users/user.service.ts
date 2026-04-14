@@ -6,8 +6,8 @@ import { ForbiddenError } from "../utils/errors/forbidden.error.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import type { createUserInput, User, UserId, Username } from "./user.type.js";
 import bcrypt from "bcrypt"
-import DynamoDbClient from "../configs/DynamoDb.client.js";
-import RedisClient from "../configs/Redis.client.js";
+import DynamoDbClient from "../configs/dynamoDb.client.js";
+import RedisClient from "../configs/redis.client.js";
 import { USER_CACHE } from "../utils/constants/cache.constants.js";
 import { ConditionalCheckFailedException} from "@aws-sdk/client-dynamodb";
 import { error } from "node:console";

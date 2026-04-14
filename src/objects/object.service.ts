@@ -2,7 +2,7 @@ import { GetCommand, PutCommand, QueryCommand, UpdateCommand, type GetCommandInp
 import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL} from "./object.types.js";
-import  DynamoDbClient from "../configs/DynamoDb.client.js";
+import  DynamoDbClient from "../configs/dynamoDb.client.js";
 import { BadRequestError } from "../utils/errors/badrequest.error.js";
 import { NotFoundError } from "../utils/errors/notfound.error.js";
 import { getFolderById } from "../folders/folder.service.js";
@@ -15,7 +15,7 @@ import StepFunctionClient from "../configs/stepFunction.client.js";
 import { POLL_CONFIG, TERMINAL_ERROR_STATUSES, type DeleteStepFunctionInput, type TerminalErrorStatus } from "../types/stepFunction.types.js";
 import { computeDuration, sleep, toExecutionStatus } from "../utils/helpers/stepFunction.helpers.js";
 import { StepFunctionExecutionError } from "../utils/errors/stepFunctionExecution.error.js";
-import RedisClient from "../configs/Redis.client.js";
+import RedisClient from "../configs/redis.client.js";
 import { OBJECT_CACHE } from "../utils/constants/cache.constants.js";
 
 
