@@ -1,15 +1,18 @@
 import express, { Router } from "express"
 import { validateCreateUserRequestBody, validateUpdatePasswordRequestBody, validateUserIdRequestQueryParam } from "./user.middlewares.js"
 import { createUser, deleteUser, getUser, updateUserPassword } from "./user.controller.js"
+import { authenticateUser } from "../middlewares/authencticateUser.js"
+import { authorizeUser } from "../middlewares/authorizeUser.js"
+import { requireRole } from "../middlewares/requireRole.js"
 
-const router : Router = express.Router()
+const router: Router = express.Router()
 
-router.post('/',validateCreateUserRequestBody,createUser)
+router.post('/',authenticateUser,authorizeUser,requireRole("ADMIN"),validateCreateUserRequestBody,createUser)
 
-router.get('/',validateUserIdRequestQueryParam,getUser)
+router.get('/',authenticateUser,authorizeUser,validateUserIdRequestQueryParam,getUser)
 
-router.patch('/password',validateUpdatePasswordRequestBody,updateUserPassword)
+router.patch('/password',authenticateUser,authorizeUser,validateUpdatePasswordRequestBody,updateUserPassword)
 
-router.delete('/',validateUserIdRequestQueryParam,deleteUser)
+router.delete('/',authenticateUser,authorizeUser,validateUserIdRequestQueryParam,deleteUser)
 
 export default router
