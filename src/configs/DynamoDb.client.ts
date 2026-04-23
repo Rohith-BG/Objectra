@@ -6,7 +6,7 @@ import { Agent as HttpAgent } from "http";
 
 const isLocal = process.env.NODE_ENV === "local";
 
-const LOCALSTACK_ENDPOINT = process.env.LOCALSTACK_ENDPOINT ?? "http://localstack:4566";
+const LOCALSTACK_ENDPOINT = process.env.AWS_ENDPOINT_URL ?? "http://localstack:4566";
 
 const httpsAgent = new HttpsAgent({
   keepAlive: true,
@@ -47,12 +47,12 @@ const DynamoDbClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(
   dynamoDbClient,
   {
     marshallOptions: {
-      removeUndefinedValues: true, 
-      convertEmptyValues: false,   
+      removeUndefinedValues: true,
+      convertEmptyValues: false,
     },
     unmarshallOptions: {
-      wrapNumbers: false,         
-    }  
+      wrapNumbers: false,
+    }
   }
 );
 
