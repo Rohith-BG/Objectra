@@ -1,3 +1,6 @@
+import type { ParamsDictionary } from "express-serve-static-core";
+import type { ParsedQs } from "qs";
+
 export interface Folder{
     id:string,
     name:string,
@@ -6,7 +9,7 @@ export interface Folder{
     updatedAt?:string
 }
 
-export interface FolderIdQueryParam {
+export interface FolderIdQueryParam extends ParsedQs {
     id: string;
 }
 
@@ -18,11 +21,11 @@ export interface CursorQueryParam {
     cursor : string
 }
 
-export interface ParentIdQueryParam{
+export interface ParentIdQueryParam extends ParsedQs{
     parentId : string
 }
 
-export interface FolderIdParam{
+export interface FolderIdParam extends ParamsDictionary{
     id:string
 }
 
