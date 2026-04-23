@@ -8,7 +8,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node dist/server.js",
     "build": "tsc",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "dev:docker": "nodemon --legacy-watch --watch src --ext ts,json --exec \"tsx src/server.ts\""
   },
   "author": "",
   "license": "ISC",
@@ -19,6 +20,7 @@
     "@aws-sdk/lib-dynamodb": "^3.975.0",
     "@aws-sdk/s3-request-presigner": "^3.981.0",
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dynamoose": "^4.0.4",
     "express": "^5.2.1",
@@ -28,6 +30,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/ioredis": "^5.0.0",
