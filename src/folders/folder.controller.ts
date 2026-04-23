@@ -1,18 +1,17 @@
 import type { Request, Response } from "express";
 import type {  Folder, FolderId, FolderIdParam, FolderIdQueryParam, FolderName, FolderNameRequestBody, ParentId, ParentIdQueryParam, UpdateParentIdRequestBody } from "./folder.types.js";
-import { addFolder, deleteFolderById, getAllSubFoldersByParentId, getFolderById, listAllMainFolders, updateFolderNameById, updateParentIdByFolderId } from "./folder.service.js";
+import {  createFolder as CreateFolderService,deleteFolderById, getAllSubFoldersByParentId, getFolderById, listAllMainFolders, updateFolderNameById, updateParentIdByFolderId } from "./folder.service.js";
 import {  validateFolderId, validateFoldername, validateParentId } from "./folder.validation.js";
 import { STATUSCODE } from "../utils/constants/statusCodes.js";
 
 
 export async function createFolder(req:Request,res:Response){
     try{
-        
         const folderName : FolderName = validateFoldername(req?.body?.name)
 
         const parentId : ParentId = validateParentId(req?.body?.parentId) 
 
-        const folder:Folder = await addFolder(folderName , parentId)
+        const folder:Folder = await CreateFolderService(folderName , parentId)
 
         res.status(STATUSCODE?.CREATED).json(folder)
     }
@@ -37,7 +36,9 @@ export async function getFolder(req:Request<{},{},{},FolderIdQueryParam>,res:Res
 
 export async function getAllMainFolders(req:Request,res:Response){
     try{
-        const mainFolders : Folder[] = await listAllMainFolders() 
+        const allowedFolders : string[] | undefined = req.user?.allowedFolders
+        
+        const mainFolders : Folder[] = await listAllMainFolders(allowedFolders) 
 
         res.status(STATUSCODE?.OK).json(mainFolders)
     }
@@ -48,9 +49,11 @@ export async function getAllMainFolders(req:Request,res:Response){
 
 export async function getAllSubFolders(req:Request<{},{},{},ParentIdQueryParam>,res:Response){
     try{
-        const parentId : ParentId = validateParentId(req?.query?.parentId)
+        const allowedFolders : string[] | undefined = req.user?.allowedFolders
 
-        const subFolders = await getAllSubFoldersByParentId(parentId)
+        const parentId = validateParentId(req?.query?.parentId) as FolderId
+
+        const subFolders = await getAllSubFoldersByParentId(parentId,allowedFolders)
 
         res.status(STATUSCODE?.OK).json(subFolders)
     }
