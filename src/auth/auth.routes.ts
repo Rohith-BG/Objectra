@@ -1,6 +1,5 @@
 import express,{ Router } from "express"
-import { loginUser, logout, logoutAllSessions } from "./auth.controller.js"
-import { refreshAcessToken } from "./auth.service.js"
+import { loginUser, logout, logoutAllSessions, refreshAcessToken } from "./auth.controller.js"
 
 const router : Router = express.Router()
 
