@@ -51,7 +51,7 @@ export const verifyToken = (accessToken: string): AccessTokenPayload => {
   try {
     const decoded = jwt.verify(
       accessToken,
-      process.env.ACCESS_TOKEN_SECRET!
+      process.env.JWT_SECRET!
     ) as AccessTokenPayload;
 
     return decoded;
