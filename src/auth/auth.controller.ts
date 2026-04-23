@@ -34,6 +34,7 @@ export async function loginUser(req:Request,res:Response){
 
 export async function refreshAcessToken(req:Request,res:Response){
     try{
+        console.log(req.cookies)
        const { refreshToken } = validateRefreshTokenCookie(req.cookies)
        
        const { accessToken, newRefreshToken, expiresAt } = await refreshAccessTokenService(refreshToken);
@@ -52,6 +53,7 @@ export async function refreshAcessToken(req:Request,res:Response){
         res.status(STATUSCODE.OK).json(accessToken)
     }
     catch(error:any){
+        console.log(`Error Stack`,error.stack)
         if (error instanceof UnauthorizedError) {
             res.clearCookie("refreshToken", {
                 httpOnly: true,
@@ -63,7 +65,7 @@ export async function refreshAcessToken(req:Request,res:Response){
             res.status(STATUSCODE.UNAUTHORIZED).json(error?.message);
             return;
         }  
-        res.status(error?.statusCode).json(error?.message)
+        res.status(error?.statusCode||400).json(error?.message)
     }
 }
 
