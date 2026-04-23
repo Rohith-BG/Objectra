@@ -1,20 +1,23 @@
 import express, { Router } from "express"
 import { createFolder, deleteFolder, getAllMainFolders, getAllSubFolders, getFolder, updateFolderName, updateParentId } from "./folder.controller.js";
+import { authenticateUser } from "../middlewares/authencticateUser.js";
+import { authorizeUser } from "../middlewares/authorizeUser.js";
+import { requireRole } from "../middlewares/requireRole.js";
 
-const router:Router = express.Router();
+const router: Router = express.Router();
 
-router.post('/',createFolder)
+router.post('/',authenticateUser,authorizeUser,requireRole("ADMIN"),createFolder)
 
-router.get('/',getFolder)
+router.get('/',authenticateUser,getFolder)
 
-router.get('/mainfolders',getAllMainFolders)
+router.get('/mainfolders',authenticateUser,getAllMainFolders)
 
-router.get('/subfolders',getAllSubFolders)
+router.get('/subfolders',authenticateUser,getAllSubFolders)
 
-router.patch('/name/:id',updateFolderName)
+router.patch('/name/:id',authenticateUser,authorizeUser,updateFolderName)
 
-router.patch('/parentId/:id',updateParentId)
+router.patch('/parentId/:id',authenticateUser,authorizeUser,updateParentId)
 
-router.delete('/',deleteFolder)
+router.delete('/',authenticateUser,authorizeUser,deleteFolder)
 
 export default router
