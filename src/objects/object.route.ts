@@ -1,7 +1,7 @@
 import express, { Router } from "express"
 import { deleteObject, getObjectFromS3, getPendingObjectByFolder, getPresignedURL, getUploadedObjectsByFolder, uploadObjectToS3 } from "./object.controller.js";
 import { authorizeUser } from "../middlewares/authorizeUser.js";
-import { authenticateUser } from "../middlewares/authencticateUser.js";
+import { authenticateUser } from "../middlewares/authenticateUser.js";
 
 
 const router: Router = express.Router();

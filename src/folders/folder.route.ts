@@ -1,6 +1,6 @@
 import express, { Router } from "express"
 import { createFolder, deleteFolder, getAllMainFolders, getAllSubFolders, getFolder, updateFolderName, updateParentId } from "./folder.controller.js";
-import { authenticateUser } from "../middlewares/authencticateUser.js";
+import { authenticateUser } from "../middlewares/authenticateUser.js";
 import { authorizeUser } from "../middlewares/authorizeUser.js";
 import { requireRole } from "../middlewares/requireRole.js";
 
