@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import type { TokenBucket } from "../utils/helpers/tokenBucket.helper.js"
+import type { CanonicalLogContext } from "../types/canonicalLog.types.js"
 import { TooManyRequestsError } from "../utils/errors/toomanyrequest.error.js"
 
 export class RateLimiterMiddleware {
@@ -15,6 +16,8 @@ export class RateLimiterMiddleware {
       res : Response,
       next: NextFunction
     ): Promise<void> => {
+      const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
       try {
         const ip  = req.ip ?? "unknown"
         const key = `ratelimit:global:${ip}`
@@ -36,6 +39,14 @@ export class RateLimiterMiddleware {
           res.setHeader("X-RateLimit-Reset"    , retryAfter)
           res.setHeader("Retry-After"          , retryAfter)
 
+          if (ctx) {
+            ctx.error = {
+              name: error.name,
+              message: error.message,
+              isOperational: true,
+            };
+          }
+
           res.status(error.statusCode).json({
             message   : error.message,
             retryAfter,
@@ -43,8 +54,14 @@ export class RateLimiterMiddleware {
           return
         }
 
-        // Redis failure - fail open, never block legitimate traffic
-        console.error("Rate limiter error:", error)
+        if (ctx) {
+          ctx.operations.push({
+            name: "rateLimiter",
+            result: "failure",
+            detail: "redis_error_fail_open",
+          });
+        }
+
         next()
       }
     }

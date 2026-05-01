@@ -20,10 +20,13 @@ import { ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 import { assertFolderAccess } from "../utils/helpers/folder.helper.js";
 import { acquireLock, releaseLock } from "../utils/helpers/redisLock.helper.js";
 import { ConflictError } from "../utils/errors/conflict.error.js"
+import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 
-async function createObject(objectName: ObjectName, folderId: FolderId): Promise<Object> {
+async function createObject(objectName: ObjectName, folderId: FolderId, ctx?: CanonicalLogContext): Promise<Object> {
     try {
-        const folder = await getFolderById(folderId);
+        const opStart = performance.now();
+
+        const folder = await getFolderById(folderId, undefined, ctx);
 
         const object: Object = {
             id: `Object@${RandomIdGenerator.getId()}`,
@@ -42,9 +45,21 @@ async function createObject(objectName: ObjectName, folderId: FolderId): Promise
 
         const response = await DynamoDbClient.send(putCommand)
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "createObject", result: "success", durationMs });
+        }
+
         return object as Object
     }
     catch (err: any) {
+        if (ctx) {
+            ctx.operations.push({ name: "createObject", result: "failure" });
+        }
+
         if (err instanceof ResourceNotFoundException) {
             throw new BadRequestError(`The requested resource table not exists`)
         }
@@ -52,14 +67,28 @@ async function createObject(objectName: ObjectName, folderId: FolderId): Promise
     }
 }
 
-async function getObjectById(objectId: ObjectId, allowedFolders?: string[]): Promise<Object> {
+async function getObjectById(objectId: ObjectId, allowedFolders?: string[], ctx?: CanonicalLogContext): Promise<Object> {
     try {
+        const opStart = performance.now();
+
         const cachedObject = await RedisClient.get(objectId)
 
         if (cachedObject) {
             const object = JSON.parse(cachedObject) as Object;
             assertFolderAccess(object?.folderId, allowedFolders);
+
+            if (ctx) {
+                ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                ctx.cache.hits += 1;
+                ctx.operations.push({ name: "getObjectById", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+            }
+
             return object
+        }
+
+        if (ctx) {
+            ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+            ctx.cache.misses += 1;
         }
 
         const getCommandInput: GetCommandInput = {
@@ -72,6 +101,9 @@ async function getObjectById(objectId: ObjectId, allowedFolders?: string[]): Pro
         const getCommandOutput: GetCommandOutput = await DynamoDbClient.send(new GetCommand(getCommandInput))
 
         if (!getCommandOutput?.Item) {
+            if (ctx) {
+                ctx.operations.push({ name: "getObjectById", result: "failure", durationMs: Math.round(performance.now() - opStart), detail: "not_found" });
+            }
             throw new NotFoundError(`Object with the id is not found`)
         }
 
@@ -86,6 +118,14 @@ async function getObjectById(objectId: ObjectId, allowedFolders?: string[]): Pro
 
         assertFolderAccess(object.folderId, allowedFolders);
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "getObjectById", result: "success", durationMs, detail: "fetched_from_db" });
+        }
+
         return object as Object
     }
     catch (err: any) {
@@ -93,16 +133,13 @@ async function getObjectById(objectId: ObjectId, allowedFolders?: string[]): Pro
     }
 }
 
-/**
- * Queries the FOLDER_NAME_INDEX GSI for an existing object with the given
- * (objectName, folderId) combination, regardless of upload status.
- *
- * @returns The existing object (PENDING or UPLOADED), or `null` if none exists.
- */
 async function findObjectByNameAndFolder(
     objectName: ObjectName,
-    folderId: FolderId
+    folderId: FolderId,
+    ctx?: CanonicalLogContext
 ): Promise<Object | null> {
+    const opStart = performance.now();
+
     const queryInput: QueryCommandInput = {
         TableName: process.env.OBJECTS_TABLE,
         IndexName: process.env.FOLDER_NAME_INDEX,
@@ -119,6 +156,19 @@ async function findObjectByNameAndFolder(
 
     const result = await DynamoDbClient.send(new QueryCommand(queryInput));
 
+    if (ctx) {
+        ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+        ctx.db.queriesExecuted += 1;
+        const durationMs = Math.round(performance.now() - opStart);
+        ctx.db.totalDbDurationMs += durationMs;
+        ctx.operations.push({
+            name: "findObjectByNameAndFolder",
+            result: result?.Items && result.Items.length > 0 ? "success" : "skipped",
+            durationMs,
+            detail: result?.Items && result.Items.length > 0 ? "existing_found" : "no_existing",
+        });
+    }
+
     if (result?.Items && result.Items.length > 0) {
         return result.Items[0] as Object;
     }
@@ -126,47 +176,53 @@ async function findObjectByNameAndFolder(
     return null;
 }
 
-export async function getPutObjectPresignedURL(objectName: ObjectName, folderId: FolderId, allowedFolders: string[] | undefined): Promise<PresignedURL> {
+export async function getPutObjectPresignedURL(objectName: ObjectName, folderId: FolderId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<PresignedURL> {
     const lockKey = `lock:putObject:${folderId}:${objectName}`;
     let lockValue: string | null = null;
 
     try {
-        // 1. Validate folder exists & user has access
-        const folder: Folder = await getFolderById(folderId, allowedFolders)
+        const folder: Folder = await getFolderById(folderId, allowedFolders, ctx)
 
-        // 2. Acquire Redis distributed lock to prevent concurrent duplicates
         lockValue = await acquireLock(lockKey);
 
         if (!lockValue) {
+            if (ctx) {
+                ctx.operations.push({ name: "acquireLock", result: "failure", detail: "lock_contention" });
+            }
             throw new ConflictError(
                 `Another upload request for "${objectName}" in this folder is already in progress. Please retry.`
             );
         }
 
-        // 3. Check if an object with this (name, folderId) already exists
-        const existingObject: Object | null = await findObjectByNameAndFolder(objectName, folderId);
+        if (ctx) {
+            ctx.operations.push({ name: "acquireLock", result: "success" });
+        }
+
+        const existingObject: Object | null = await findObjectByNameAndFolder(objectName, folderId, ctx);
 
         let object: Object;
 
         if (existingObject && existingObject.status === UploadStatus.uploaded) {
-            // 4a. Object already uploaded — reject the request
             throw new ConflictError(
                 `An object with the name "${objectName}" already exists in this folder.`
             );
         } else if (existingObject && existingObject.status === UploadStatus.pending) {
-            // 4b. PENDING object found — reuse it (idempotent retry)
             object = existingObject;
         } else {
-            // 4c. No existing object — create a new record
-            object = await createObject(objectName, folderId);
+            object = await createObject(objectName, folderId, ctx);
         }
 
-        // 5. Release lock before the presigned URL call (it's a pure read, no state mutation)
         await releaseLock(lockKey, lockValue);
-        lockValue = null; // mark as released so finally block doesn't double-release
+        lockValue = null;
 
-        // 6. Generate presigned URL using the (reused or new) S3 key
+        const presignedUrlStart = performance.now();
         const putObjectPresignedURL = await generatePutObjectPresignedURL(object?.key)
+
+        if (ctx) {
+            ctx.s3 = ctx.s3 ?? { presignedUrlsGenerated: 0 };
+            ctx.s3.presignedUrlsGenerated += 1;
+            ctx.operations.push({ name: "generatePutPresignedUrl", result: "success", durationMs: Math.round(performance.now() - presignedUrlStart) });
+        }
 
         return putObjectPresignedURL;
     }
@@ -174,22 +230,33 @@ export async function getPutObjectPresignedURL(objectName: ObjectName, folderId:
         throw err;
     }
     finally {
-        // Safety net: release lock if it wasn't already released (e.g. error between acquire and explicit release)
         if (lockValue) {
             await releaseLock(lockKey, lockValue).catch(() => { });
         }
     }
 }
 
-export async function getObjectPresignedURL(objectId: ObjectId, allowedFolders: string[] | undefined): Promise<PresignedURL> {
+export async function getObjectPresignedURL(objectId: ObjectId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<PresignedURL> {
     try {
+        const opStart = performance.now();
+
         const cachedPresignedUrl: PresignedURL | null = await RedisClient.get(OBJECT_CACHE.GET_OBJECT_PRESIGNED_URL(objectId))
 
         if (cachedPresignedUrl) {
+            if (ctx) {
+                ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                ctx.cache.hits += 1;
+                ctx.operations.push({ name: "getObjectPresignedURL", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+            }
             return cachedPresignedUrl
         }
 
-        const object: Object = await getObjectById(objectId, allowedFolders)
+        if (ctx) {
+            ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+            ctx.cache.misses += 1;
+        }
+
+        const object: Object = await getObjectById(objectId, allowedFolders, ctx)
 
         if (object?.status === UploadStatus.pending) {
             throw new BadRequestError(`Cannot get presignedURL as object not exists in the bucket`)
@@ -206,6 +273,12 @@ export async function getObjectPresignedURL(objectId: ObjectId, allowedFolders: 
             OBJECT_CACHE.PRESIGNED_URL_TTL
         )
 
+        if (ctx) {
+            ctx.s3 = ctx.s3 ?? { presignedUrlsGenerated: 0 };
+            ctx.s3.presignedUrlsGenerated += 1;
+            ctx.operations.push({ name: "getObjectPresignedURL", result: "success", durationMs: Math.round(performance.now() - opStart) });
+        }
+
         return presignedURL
     }
     catch (err: any) {
@@ -213,9 +286,11 @@ export async function getObjectPresignedURL(objectId: ObjectId, allowedFolders: 
     }
 }
 
-export async function getPresignedUrlForPendingUploads(objectId: ObjectId, allowedFolders: string[] | undefined): Promise<PresignedURL> {
+export async function getPresignedUrlForPendingUploads(objectId: ObjectId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<PresignedURL> {
     try {
-        const object: Object = await getObjectById(objectId, allowedFolders)
+        const opStart = performance.now();
+
+        const object: Object = await getObjectById(objectId, allowedFolders, ctx)
 
         if (object && object?.status != UploadStatus?.pending) {
             throw new BadRequestError(`Cannot get the presigned url for the uploaded image`)
@@ -229,6 +304,12 @@ export async function getPresignedUrlForPendingUploads(objectId: ObjectId, allow
 
         const presignedURL: PresignedURL = await generatePutObjectPresignedURL(objectKey)
 
+        if (ctx) {
+            ctx.s3 = ctx.s3 ?? { presignedUrlsGenerated: 0 };
+            ctx.s3.presignedUrlsGenerated += 1;
+            ctx.operations.push({ name: "getPresignedUrlForPendingUploads", result: "success", durationMs: Math.round(performance.now() - opStart) });
+        }
+
         return presignedURL
     }
     catch (err: any) {
@@ -236,9 +317,11 @@ export async function getPresignedUrlForPendingUploads(objectId: ObjectId, allow
     }
 }
 
-export async function getUploadedObjectsByFolderId(folderId: FolderId, cursor: Cursor) {
+export async function getUploadedObjectsByFolderId(folderId: FolderId, cursor: Cursor, ctx?: CanonicalLogContext) {
     try {
-        const folder = await getFolderById(folderId)
+        const opStart = performance.now();
+
+        const folder = await getFolderById(folderId, undefined, ctx)
 
         let decodedCursor = undefined
 
@@ -267,6 +350,14 @@ export async function getUploadedObjectsByFolderId(folderId: FolderId, cursor: C
 
         const lastEvaluatedKey = queryCommandOutput?.LastEvaluatedKey ? CursorCodec.encode(queryCommandOutput?.LastEvaluatedKey) : undefined
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "getUploadedObjectsByFolderId", result: "success", durationMs, detail: `returned_${objects.length}_items` });
+        }
+
         return {
             objects,
             lastEvaluatedKey
@@ -277,9 +368,11 @@ export async function getUploadedObjectsByFolderId(folderId: FolderId, cursor: C
     }
 }
 
-export async function fetchPendingObjectsByFolderId(folderId: FolderId, cursor: Cursor) {
+export async function fetchPendingObjectsByFolderId(folderId: FolderId, cursor: Cursor, ctx?: CanonicalLogContext) {
     try {
-        const folder = await getFolderById(folderId)
+        const opStart = performance.now();
+
+        const folder = await getFolderById(folderId, undefined, ctx)
 
         let decodedCursor = undefined
 
@@ -303,14 +396,25 @@ export async function fetchPendingObjectsByFolderId(folderId: FolderId, cursor: 
         }
 
         const queryCommandOutput: QueryCommandOutput = await DynamoDbClient.send(new QueryCommand(input))
-        console.log(queryCommandOutput)
+
         if (!queryCommandOutput?.Items || queryCommandOutput?.Items.length === 0) {
+            if (ctx) {
+                ctx.operations.push({ name: "fetchPendingObjectsByFolderId", result: "failure", durationMs: Math.round(performance.now() - opStart), detail: "not_found" });
+            }
             throw new NotFoundError(`No Uploaded Images with this folderId`)
         }
 
         const objects = queryCommandOutput?.Items ?? []
 
         const lastEvaluatedKey = queryCommandOutput?.LastEvaluatedKey ? CursorCodec.encode(queryCommandOutput?.LastEvaluatedKey) : undefined
+
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "fetchPendingObjectsByFolderId", result: "success", durationMs, detail: `returned_${objects.length}_items` });
+        }
 
         return {
             objects,
@@ -322,9 +426,9 @@ export async function fetchPendingObjectsByFolderId(folderId: FolderId, cursor: 
     }
 }
 
-export async function deleteObjectById(objectId: ObjectId) {
+export async function deleteObjectById(objectId: ObjectId, ctx?: CanonicalLogContext) {
     try {
-        const object: Object = await getObjectById(objectId)
+        const object: Object = await getObjectById(objectId, undefined, ctx)
 
         const stepFunctionInput: DeleteStepFunctionInput = {
             objectId: objectId,
@@ -336,11 +440,17 @@ export async function deleteObjectById(objectId: ObjectId) {
             input: JSON.stringify(stepFunctionInput)
         };
 
+        const sfnStart = performance.now();
+
         const startResponse: StartExecutionCommandOutput = await StepFunctionClient.send(
             new StartExecutionCommand(startCommandInput)
         );
 
         const executionArn: string = startResponse?.executionArn!;
+
+        if (ctx) {
+            ctx.operations.push({ name: "startStepFunctionExecution", result: "success", durationMs: Math.round(performance.now() - sfnStart) });
+        }
 
         let currentDelay: number = POLL_CONFIG.initialDelayMs;
         const pollStarted: number = Date.now();
@@ -370,6 +480,10 @@ export async function deleteObjectById(objectId: ObjectId) {
 
                 await RedisClient.del(objectId);
 
+                if (ctx) {
+                    ctx.operations.push({ name: "deleteObjectStepFunction", result: "success", durationMs, detail: `attempts_${attempt}` });
+                }
+
                 return {
                     success: true,
                     executionArn,
@@ -381,6 +495,10 @@ export async function deleteObjectById(objectId: ObjectId) {
 
 
             if (TERMINAL_ERROR_STATUSES.has(status as TerminalErrorStatus)) {
+                if (ctx) {
+                    ctx.operations.push({ name: "deleteObjectStepFunction", result: "failure", durationMs, detail: `status_${status}` });
+                }
+
                 throw new StepFunctionExecutionError({
                     executionArn,
                     status: status as TerminalErrorStatus,
@@ -392,6 +510,10 @@ export async function deleteObjectById(objectId: ObjectId) {
             }
 
             if (attempt === POLL_CONFIG.maxAttempts) {
+                if (ctx) {
+                    ctx.operations.push({ name: "deleteObjectStepFunction", result: "failure", durationMs: elapsed, detail: "polling_exhausted" });
+                }
+
                 throw new StepFunctionExecutionError({
                     executionArn,
                     status: "POLLING_EXHAUSTED",
@@ -418,6 +540,3 @@ export async function deleteObjectById(objectId: ObjectId) {
         throw err
     }
 }
-
-
-

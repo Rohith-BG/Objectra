@@ -6,8 +6,8 @@ export async function validateCreateUserRequestBody(req:Request,res:Response,nex
         req.body = validateCreateUserBody(req.body)
         next()
     }
-    catch(error:any){
-        res.status(error?.statusCode).json(error?.message)
+    catch(err){
+        next(err);
     }
 }
 
@@ -16,8 +16,8 @@ export async function validateUserIdRequestQueryParam(req:Request,res:Response,n
         validateUserIdQueryParam(req.query)
         next()
     }
-    catch(error : any){
-        res.status(error?.statusCode || 400).json(error?.message)
+    catch(err){
+        next(err);
     }
 }
 
@@ -26,8 +26,8 @@ export async function validateUpdatePasswordRequestBody(req:Request,res:Response
         req.body = validateUpdatePasswordBody(req.body)
         next()
     }
-    catch(error : any){
-        res.status(error?.statusCode).json(error?.message)
+    catch(err){
+        next(err);
     }
 }
 

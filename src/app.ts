@@ -6,21 +6,25 @@ import objectRoutes from "./objects/object.route.js"
 import userRoutes from "./users/user.routes.js"
 import authRoutes from "./auth/auth.routes.js"
 import rateLimiter from "./configs/rateLimiter.js"
+import { canonicalLogMiddleware } from "./middlewares/canonicalLog.middleware.js"
+import { globalErrorHandler } from "./middlewares/globalErrorHandler.middleware.js"
 import cookieParser from "cookie-parser"
 
 const app: Application = express()
 
+app.use(canonicalLogMiddleware)
 app.use(rateLimiter.handle())
 app.use(express.json())
 app.use(cors())
 app.use(cookieParser())
 
-app.use('/folders',folderRoutes)
-app.use('/objects',objectRoutes)
-app.use('/users',userRoutes)
-app.use('/auth',authRoutes)
+app.use('/folders', folderRoutes)
+app.use('/objects', objectRoutes)
+app.use('/users', userRoutes)
+app.use('/auth', authRoutes)
+app.use(globalErrorHandler)
 
-export default app ;
+export default app;
 
 
 

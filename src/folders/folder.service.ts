@@ -11,11 +11,14 @@ import { CACHE_KEYS } from "../utils/constants/cache.constants.js"
 import { getUploadedObjectsByFolderId } from "../objects/object.service.js"
 import { assertFolderAccess, filterAllowedFolders } from "../utils/helpers/folder.helper.js"
 import { ForbiddenError } from "../utils/errors/forbidden.error.js"
+import type { CanonicalLogContext } from "../types/canonicalLog.types.js"
 dotenv.config()
 
 
-export async function createFolder(folderName: string, parentId: ParentId): Promise<Folder> {
+export async function createFolder(folderName: string, parentId: ParentId, ctx?: CanonicalLogContext): Promise<Folder> {
     try {
+        const opStart = performance.now();
+
         parentId = parentId === null ? 'ROOT' : (await getFolderById(parentId))?.id
 
         const folder: Folder = {
@@ -39,9 +42,21 @@ export async function createFolder(folderName: string, parentId: ParentId): Prom
             await RedisClient.del(CACHE_KEYS.SUB_FOLDERS(parentId));
         }
 
+        if (ctx) {
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "createFolder", result: "success", durationMs });
+        }
+
         return folder
     }
     catch (error: unknown) {
+        if (ctx) {
+            ctx.operations.push({ name: "createFolder", result: "failure" });
+        }
+
         if (error instanceof ResourceNotFoundException) {
             throw new BadRequestError(`Folder failed to create as the required resource not exists in DB`)
         }
@@ -52,8 +67,10 @@ export async function createFolder(folderName: string, parentId: ParentId): Prom
     }
 }
 
-export async function getFolderById(folderId: string, allowedFolders?: string[]): Promise<Folder> {
+export async function getFolderById(folderId: string, allowedFolders?: string[], ctx?: CanonicalLogContext): Promise<Folder> {
     try {
+        const opStart = performance.now();
+
         const cachedMainFoldersList = await RedisClient.get(CACHE_KEYS.MAIN_FOLDERS);
 
         if (cachedMainFoldersList) {
@@ -62,6 +79,13 @@ export async function getFolderById(folderId: string, allowedFolders?: string[])
 
             if (folder !== undefined) {
                 assertFolderAccess(folder.id, allowedFolders)
+
+                if (ctx) {
+                    ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                    ctx.cache.hits += 1;
+                    ctx.operations.push({ name: "getFolderById", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+                }
+
                 return folder
             }
         }
@@ -73,7 +97,19 @@ export async function getFolderById(folderId: string, allowedFolders?: string[])
         if (cachedFolder) {
             const folder = JSON.parse(cachedFolder) as Folder;
             assertFolderAccess(folder.id, allowedFolders);
+
+            if (ctx) {
+                ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                ctx.cache.hits += 1;
+                ctx.operations.push({ name: "getFolderById", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+            }
+
             return folder
+        }
+
+        if (ctx) {
+            ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+            ctx.cache.misses += 1;
         }
 
         const getCommandInput: GetCommandInput = {
@@ -86,6 +122,9 @@ export async function getFolderById(folderId: string, allowedFolders?: string[])
         const getCommandOutput: GetCommandOutput = await DynamoDbClient.send(new GetCommand(getCommandInput))
 
         if (!getCommandOutput?.Item) {
+            if (ctx) {
+                ctx.operations.push({ name: "getFolderById", result: "failure", durationMs: Math.round(performance.now() - opStart), detail: "not_found" });
+            }
             throw new NotFoundError(`Folder with this id not exists`)
         }
 
@@ -101,6 +140,14 @@ export async function getFolderById(folderId: string, allowedFolders?: string[])
 
         assertFolderAccess(folder.id, allowedFolders)
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "getFolderById", result: "success", durationMs, detail: "fetched_from_db" });
+        }
+
         return folder
     }
     catch (error: unknown) {
@@ -108,7 +155,7 @@ export async function getFolderById(folderId: string, allowedFolders?: string[])
     }
 }
 
-export async function getFoldersByIds(folderIds: FolderId[]): Promise<Folder[]> {
+export async function getFoldersByIds(folderIds: FolderId[], ctx?: CanonicalLogContext): Promise<Folder[]> {
     try {
         if (!folderIds || folderIds.length === 0) {
             return []
@@ -118,7 +165,7 @@ export async function getFoldersByIds(folderIds: FolderId[]): Promise<Folder[]> 
             folderIds
                 .filter(folderId => folderId !== undefined && folderId !== null)
                 .map((folderId: FolderId) => {
-                    return getFolderById(folderId)
+                    return getFolderById(folderId, undefined, ctx)
                 })
         )
 
@@ -140,13 +187,27 @@ export async function getFoldersByIds(folderIds: FolderId[]): Promise<Folder[]> 
     }
 }
 
-export async function listAllMainFolders(allowedFolders: string[] | undefined): Promise<Folder[]> {
+export async function listAllMainFolders(allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<Folder[]> {
     try {
+        const opStart = performance.now();
+
         const cachedFolders = await RedisClient.get(CACHE_KEYS?.MAIN_FOLDERS)
 
         if (cachedFolders) {
             const folders: Folder[] = JSON.parse(cachedFolders)
+
+            if (ctx) {
+                ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                ctx.cache.hits += 1;
+                ctx.operations.push({ name: "listAllMainFolders", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+            }
+
             return filterAllowedFolders(folders, allowedFolders)
+        }
+
+        if (ctx) {
+            ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+            ctx.cache.misses += 1;
         }
 
         const queryCommandInput: QueryCommandInput = {
@@ -168,6 +229,14 @@ export async function listAllMainFolders(allowedFolders: string[] | undefined): 
             1800
         )
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "listAllMainFolders", result: "success", durationMs, detail: "fetched_from_db" });
+        }
+
         return filterAllowedFolders(folders, allowedFolders);
     }
     catch (error: unknown) {
@@ -175,11 +244,13 @@ export async function listAllMainFolders(allowedFolders: string[] | undefined): 
     }
 }
 
-export async function getAllSubFoldersByParentId(parentId: FolderId, allowedFolders?: string[] | undefined): Promise<Folder[]> {
+export async function getAllSubFoldersByParentId(parentId: FolderId, allowedFolders?: string[] | undefined, ctx?: CanonicalLogContext): Promise<Folder[]> {
     try {
+        const opStart = performance.now();
+
         assertFolderAccess(parentId, allowedFolders)
 
-        const parentFolder = await getFolderById(parentId)
+        const parentFolder = await getFolderById(parentId, undefined, ctx)
 
         const cacheKey = CACHE_KEYS.SUB_FOLDERS(parentId)
 
@@ -187,7 +258,19 @@ export async function getAllSubFoldersByParentId(parentId: FolderId, allowedFold
 
         if (cachedSubFolders) {
             const subFolders: Folder[] = JSON.parse(cachedSubFolders)
+
+            if (ctx) {
+                ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+                ctx.cache.hits += 1;
+                ctx.operations.push({ name: "getAllSubFoldersByParentId", result: "success", durationMs: Math.round(performance.now() - opStart), detail: "cache_hit" });
+            }
+
             return filterAllowedFolders(subFolders, allowedFolders)
+        }
+
+        if (ctx) {
+            ctx.cache = ctx.cache ?? { hits: 0, misses: 0 };
+            ctx.cache.misses += 1;
         }
 
         const queryCommandInput: QueryCommandInput = {
@@ -210,6 +293,14 @@ export async function getAllSubFoldersByParentId(parentId: FolderId, allowedFold
             1800
         );
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "getAllSubFoldersByParentId", result: "success", durationMs, detail: "fetched_from_db" });
+        }
+
         return filterAllowedFolders(subFolders, allowedFolders)
     }
     catch (error: unknown) {
@@ -223,9 +314,11 @@ export async function getAllSubFoldersByParentId(parentId: FolderId, allowedFold
     }
 }
 
-export async function updateFolderNameById(folderId: FolderId, folderName: FolderName): Promise<Folder> {
+export async function updateFolderNameById(folderId: FolderId, folderName: FolderName, ctx?: CanonicalLogContext): Promise<Folder> {
     try {
-        const folder = await getFolderById(folderId)
+        const opStart = performance.now();
+
+        const folder = await getFolderById(folderId, undefined, ctx)
 
         const updateCommandInput: UpdateCommandInput = {
             TableName: process.env.FOLDERS_TABLE,
@@ -262,9 +355,21 @@ export async function updateFolderNameById(folderId: FolderId, folderName: Folde
             ])
         }
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "updateFolderNameById", result: "success", durationMs });
+        }
+
         return updatedFolder
     }
     catch (error: unknown) {
+        if (ctx) {
+            ctx.operations.push({ name: "updateFolderNameById", result: "failure" });
+        }
+
         if (error instanceof NotFoundError) {
             throw new NotFoundError(`Failed to update as folder with the id not found`)
         }
@@ -274,9 +379,11 @@ export async function updateFolderNameById(folderId: FolderId, folderName: Folde
     }
 }
 
-export async function updateParentIdByFolderId(folderId: FolderId, oldParentId: FolderId, newParentId: FolderId): Promise<Folder> {
+export async function updateParentIdByFolderId(folderId: FolderId, oldParentId: FolderId, newParentId: FolderId, ctx?: CanonicalLogContext): Promise<Folder> {
     try {
-        const folder = await getFolderById(newParentId);
+        const opStart = performance.now();
+
+        const folder = await getFolderById(newParentId, undefined, ctx);
 
         const updateCommmandInput: UpdateCommandInput = {
             TableName: process.env.FOLDERS_TABLE,
@@ -314,9 +421,21 @@ export async function updateParentIdByFolderId(folderId: FolderId, oldParentId: 
             keysToInvalidate.map(key => RedisClient.del(key))
         );
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "updateParentIdByFolderId", result: "success", durationMs });
+        }
+
         return updatedFolder
     }
     catch (error: any) {
+        if (ctx) {
+            ctx.operations.push({ name: "updateParentIdByFolderId", result: "failure" });
+        }
+
         if (error instanceof ConditionalCheckFailedException) {
             throw new NotFoundError(`Folder with the requested Id not found`)
         }
@@ -324,17 +443,19 @@ export async function updateParentIdByFolderId(folderId: FolderId, oldParentId: 
     }
 }
 
-export async function deleteFolderById(folderId: FolderId): Promise<Folder> {
+export async function deleteFolderById(folderId: FolderId, ctx?: CanonicalLogContext): Promise<Folder> {
     try {
-        const folder = await getFolderById(folderId)
+        const opStart = performance.now();
 
-        const subFolders: Folder[] = await getAllSubFoldersByParentId(folderId);
+        const folder = await getFolderById(folderId, undefined, ctx)
+
+        const subFolders: Folder[] = await getAllSubFoldersByParentId(folderId, undefined, ctx);
 
         if (subFolders.length > 0) {
             throw new BadRequestError(`Folder contains sub folders — remove them before deleting`);
         }
 
-        const { objects } = await getUploadedObjectsByFolderId(folderId, undefined);
+        const { objects } = await getUploadedObjectsByFolderId(folderId, undefined, ctx);
 
         if (objects.length > 0) {
             throw new BadRequestError(`Folder contains objects — remove them before deleting`);
@@ -368,9 +489,21 @@ export async function deleteFolderById(folderId: FolderId): Promise<Folder> {
             keysToInvalidate.map(key => RedisClient.del(key))
         );
 
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - opStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "deleteFolderById", result: "success", durationMs });
+        }
+
         return deletedFolder
     }
     catch (error: any) {
+        if (ctx) {
+            ctx.operations.push({ name: "deleteFolderById", result: "failure" });
+        }
+
         if (error instanceof ConditionalCheckFailedException) {
             throw new NotFoundError(`Folder with the id is not found`)
         }

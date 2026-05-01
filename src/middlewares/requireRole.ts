@@ -21,8 +21,8 @@ export function requireRole(...allowedRoles: UserRole[]) {
             }
 
             next();
-        } catch (error: any) {
-            res.status(error?.statusCode).json(error?.message);
+        } catch (err) {
+            next(err);
         }
     };
 }

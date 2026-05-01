@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "../users/user.type.js";
+import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 import { ForbiddenError } from "../utils/errors/forbidden.error.js";
 
 const ROLE_METHOD_ACCESS: Record<UserRole, string[]> = {
@@ -10,8 +11,8 @@ const ROLE_METHOD_ACCESS: Record<UserRole, string[]> = {
 };
 
 export function authorizeUser(
-  req : Request,
-  res : Response,
+  req: Request,
+  res: Response,
   next: NextFunction
 ): void {
   try {
@@ -35,8 +36,7 @@ export function authorizeUser(
     }
 
     next();
-
-  } catch (error: any) {
-    res.status(error?.statusCode).json(error?.message)
+  } catch (err) {
+    next(err);
   }
 }

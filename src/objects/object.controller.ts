@@ -1,13 +1,16 @@
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { validateObjectId, validateObjectName } from "./object.validation.js";
 import { validateCursor, validateFolderId } from "../folders/folder.validation.js";
 import { deleteObjectById,fetchPendingObjectsByFolderId, getObjectPresignedURL, getPresignedUrlForPendingUploads, getPutObjectPresignedURL, getUploadedObjectsByFolderId} from "./object.service.js";
 import type { FolderIdCursorQueryParam,ObjectId,ObjectIdQueryParam, ObjectName, } from "./object.types.js";
 import type { Cursor, FolderId } from "../folders/folder.types.js";
 import { STATUSCODE } from "../utils/constants/statusCodes.js";
+import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 
 
-export async function uploadObjectToS3(req:Request,res:Response){
+export async function uploadObjectToS3(req:Request,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const folderId : FolderId = validateFolderId(req?.body?.folderId)
 
@@ -15,87 +18,121 @@ export async function uploadObjectToS3(req:Request,res:Response){
 
         const allowedFolders : string[] | undefined = req.user?.allowedFolders
 
-        const presignedURL = await getPutObjectPresignedURL(objectName,folderId,allowedFolders)
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, folderId };
+        }
+
+        const presignedURL = await getPutObjectPresignedURL(objectName,folderId,allowedFolders, ctx)
 
         res.status(STATUSCODE?.OK).json(presignedURL)
     }
-    catch(err:any){
-        res.status(err?.statusCode||400).json(err?.stack)
+    catch(err){
+        next(err);
     }
 }
 
-export async function getObjectFromS3(req:Request<{},{},{},ObjectIdQueryParam>,res:Response) {
+export async function getObjectFromS3(req:Request<{},{},{},ObjectIdQueryParam>,res:Response,next:NextFunction) {
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const objectId = validateObjectId(req?.query?.id)
         
         const allowedFolders : string[] | undefined = req.user?.allowedFolders
 
-        const presignedURL = await getObjectPresignedURL(objectId,allowedFolders)
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, objectId };
+        }
+
+        const presignedURL = await getObjectPresignedURL(objectId,allowedFolders, ctx)
 
         res.status(STATUSCODE?.OK).json(presignedURL)
     }
-    catch(err:any){
-        res.status(err?.statusCode).json(err?.stack)
+    catch(err){
+        next(err);
     }
 }
 
-export async function getPresignedURL(req:Request<{},{},{},ObjectIdQueryParam>,res:Response){
+export async function getPresignedURL(req:Request<{},{},{},ObjectIdQueryParam>,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const objectId : ObjectId = validateObjectId(req?.query?.id)
 
         const allowedFolders : string[] | undefined = req.user?.allowedFolders
+
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, objectId };
+        }
         
-        const putObjectPresignedURL = await getPresignedUrlForPendingUploads(objectId,allowedFolders) 
+        const putObjectPresignedURL = await getPresignedUrlForPendingUploads(objectId,allowedFolders, ctx) 
 
         res.status(STATUSCODE?.OK).json(putObjectPresignedURL)
     }
-    catch(err:any){
-        res.status(err?.statusCode).json(err?.stack)
+    catch(err){
+        next(err);
     }
 }
 
-export async function getUploadedObjectsByFolder(req:Request<{},{},{},FolderIdCursorQueryParam>,res:Response){
+export async function getUploadedObjectsByFolder(req:Request<{},{},{},FolderIdCursorQueryParam>,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const folderId : FolderId = validateFolderId(req?.query?.id)
 
         const cursor : Cursor = validateCursor(req?.query?.cursor)
 
-        const uploadedObjects = await getUploadedObjectsByFolderId(folderId,cursor)
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, folderId };
+        }
+
+        const uploadedObjects = await getUploadedObjectsByFolderId(folderId,cursor, ctx)
 
         res.status(STATUSCODE?.OK).json(uploadedObjects)
     }
-    catch(err:any){
-        res.status(err?.statusCode).json(err?.stack)
+    catch(err){
+        next(err);
     }
 }
 
 
-export async function getPendingObjectByFolder(req:Request<{},{},{},FolderIdCursorQueryParam>,res:Response){
+export async function getPendingObjectByFolder(req:Request<{},{},{},FolderIdCursorQueryParam>,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const folderId : FolderId = validateFolderId(req?.query?.id)
 
         const cursor : Cursor = validateCursor(req?.query?.cursor)
 
-        const pendingObjects = await fetchPendingObjectsByFolderId(folderId,cursor)
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, folderId };
+        }
+
+        const pendingObjects = await fetchPendingObjectsByFolderId(folderId,cursor, ctx)
 
         res.status(STATUSCODE?.OK).json(pendingObjects)
     }
-    catch(err:any){
-        res.status(err?.statusCode).json(err?.stack)
+    catch(err){
+        next(err);
     }
 }
 
 
-export async function deleteObject(req:Request<{},{},{},ObjectIdQueryParam>,res:Response){
+export async function deleteObject(req:Request<{},{},{},ObjectIdQueryParam>,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
     try{
         const objectId : ObjectId = validateObjectId(req?.query?.id)
 
-        const isDeleted  = await deleteObjectById(objectId)
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, objectId };
+        }
+
+        const isDeleted  = await deleteObjectById(objectId, ctx)
 
         res.status(STATUSCODE?.OK).json(isDeleted)
 
     }
-    catch(err:any){
-        res.status(STATUSCODE?.BAD_REQUEST).json(err.message)
+    catch(err){
+        next(err);
     }
 }
