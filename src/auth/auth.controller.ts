@@ -3,7 +3,7 @@ import { validateLoginUserBody, validateRefreshTokenCookie } from "./auth.valida
 import { getAcessAndRefreshToken, revokeAllUserSessions, revokeRefreshToken } from "./auth.service.js";
 import { STATUSCODE } from "../utils/constants/statusCodes.js";
 import { refreshAcessToken as refreshAccessTokenService } from "./auth.service.js";
-import { UnauthorizedError } from "../utils/errors/unauthorized.error.js";
+import { UnauthorizedError } from "../utils/errors/http.errors.js";
 import { extractUserIdFromToken } from "../utils/jwt/jwt.utils.js";
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 

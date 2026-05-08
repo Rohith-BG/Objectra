@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "../users/user.type.js";
-import { ForbiddenError } from "../utils/errors/forbidden.error.js";
+import { ForbiddenError } from "../utils/errors/http.errors.js";
 
 
 export function requireRole(...allowedRoles: UserRole[]) {

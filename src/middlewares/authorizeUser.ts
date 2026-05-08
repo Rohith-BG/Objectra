@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { UserRole } from "../users/user.type.js";
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
-import { ForbiddenError } from "../utils/errors/forbidden.error.js";
+import { ForbiddenError } from "../utils/errors/http.errors.js";
 
 const ROLE_METHOD_ACCESS: Record<UserRole, string[]> = {
   READ_ONLY  : ["GET"],

@@ -1,8 +1,7 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand, type DeleteCommandInput, type DeleteCommandOutput, type GetCommandInput, type GetCommandOutput, type PutCommandInput, type PutCommandOutput, type QueryCommandInput, type QueryCommandOutput, type UpdateCommandInput, type UpdateCommandOutput } from "@aws-sdk/lib-dynamodb";
 import { getFoldersByIds } from "../folders/folder.service.js";
 import { USER_ROLES } from "../utils/constants/user.roles.constants.js";
-import { BadRequestError } from "../utils/errors/badrequest.error.js";
-import { ForbiddenError } from "../utils/errors/forbidden.error.js";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../utils/errors/http.errors.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import type { createUserInput, User, UserId, Username } from "./user.type.js";
 import bcrypt from "bcrypt"
@@ -10,7 +9,6 @@ import DynamoDbClient from "../configs/dynamoDb.client.js";
 import RedisClient from "../configs/redis.client.js";
 import { USER_CACHE } from "../utils/constants/cache.constants.js";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
-import { NotFoundError } from "../utils/errors/notfound.error.js";
 import dotenv from "dotenv"
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 dotenv.config()

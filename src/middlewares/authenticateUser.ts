@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
-import { UnauthorizedError } from "../utils/errors/unauthorized.error.js";
+import { UnauthorizedError } from "../utils/errors/http.errors.js";
 import { verifyToken } from "../utils/jwt/jwt.utils.js";
 
 export function authenticateUser(req: Request, res: Response, next: NextFunction): void {

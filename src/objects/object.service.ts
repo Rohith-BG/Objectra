@@ -3,8 +3,7 @@ import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
 import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL } from "./object.types.js";
 import DynamoDbClient from "../configs/dynamoDb.client.js";
-import { BadRequestError } from "../utils/errors/badrequest.error.js";
-import { NotFoundError } from "../utils/errors/notfound.error.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../utils/errors/http.errors.js";
 import { getFolderById } from "../folders/folder.service.js";
 import { generatePutObjectPresignedURL } from "../utils/S3-PresignedUrl/putObject.js";
 import { generateGetObjectPresignedURL } from "../utils/S3-PresignedUrl/getObject.js";
@@ -19,7 +18,6 @@ import { OBJECT_CACHE } from "../utils/constants/cache.constants.js";
 import { ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 import { assertFolderAccess } from "../utils/helpers/folder.helper.js";
 import { acquireLock, releaseLock } from "../utils/helpers/redisLock.helper.js";
-import { ConflictError } from "../utils/errors/conflict.error.js"
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 
 async function createObject(objectName: ObjectName, folderId: FolderId, ctx?: CanonicalLogContext): Promise<Object> {

@@ -1,5 +1,5 @@
 import type { Folder } from "../../folders/folder.types.js";
-import { ForbiddenError } from "../errors/forbidden.error.js";
+import { ForbiddenError } from "../errors/http.errors.js";
 
 export function filterAllowedFolders(folders: Folder[],allowedFolders: string[] | undefined): Folder[] {
   if (!allowedFolders || allowedFolders.length === 0) {

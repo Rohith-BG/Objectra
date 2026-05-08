@@ -1,8 +1,7 @@
 import { getUserById, getUserByName } from "../users/user.service.js";
 import type { User, UserId, Username } from "../users/user.type.js";
-import { NotFoundError } from "../utils/errors/notfound.error.js";
+import { NotFoundError, UnauthorizedError } from "../utils/errors/http.errors.js";
 import bcrypt from "bcrypt"
-import { UnauthorizedError } from "../utils/errors/unauthorized.error.js";
 import type { AccessToken, RefreshToken, RefreshTokenItem, RevokeRefreshTokenResult } from "./auth.types.js";
 import { extractUserIdFromToken, generateAccessToken, generateOpaqueToken, hashToken } from "../utils/jwt/jwt.utils.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";

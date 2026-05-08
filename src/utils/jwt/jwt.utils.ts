@@ -5,7 +5,7 @@ import RandomIdGenerator from "../helpers/create-randomId.helper.js";
 import CursorCodec from "../helpers/cursorCodec.helper.js";
 dotenv.config()
 import crypto from "crypto"
-import { UnauthorizedError } from "../errors/unauthorized.error.js";
+import { UnauthorizedError } from "../errors/http.errors.js";
 
 export function generateAccessToken(payload:JWTPayload):AccessToken{
     const accessToken : AccessToken = jwt.sign(

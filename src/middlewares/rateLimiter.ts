@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express"
 import type { TokenBucket } from "../utils/helpers/tokenBucket.helper.js"
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js"
-import { TooManyRequestsError } from "../utils/errors/toomanyrequest.error.js"
+import { TooManyRequestsError } from "../utils/errors/http.errors.js"
 
 export class RateLimiterMiddleware {
   private readonly tokenBucket: TokenBucket
