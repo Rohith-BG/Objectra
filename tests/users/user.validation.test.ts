@@ -4,8 +4,7 @@ import {
   validateUpdatePasswordBody,
   validateUserIdQueryParam,
 } from "../../src/users/user.validation.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
-import { ValidationError } from "../../src/utils/errors/validation.error.js";
+import { BadRequestError, ValidationError } from "../../src/utils/errors/http.errors.js";
 
 describe("user validation", () => {
   describe("validateCreateUserBody", () => {

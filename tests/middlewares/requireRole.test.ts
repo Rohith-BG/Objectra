@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import type {} from "../../src/types/express.type.js";
 import { requireRole } from "../../src/middlewares/requireRole.js";
-import { ForbiddenError } from "../../src/utils/errors/forbidden.error.js";
+import { ForbiddenError } from "../../src/utils/errors/http.errors.js";
 
 function mockRequest(role?: string): Request {
   return {

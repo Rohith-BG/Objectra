@@ -13,9 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Folder } from "../../src/folders/folder.types.js";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
 import { CACHE_KEYS } from "../../src/utils/constants/cache.constants.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
-import { ForbiddenError } from "../../src/utils/errors/forbidden.error.js";
-import { NotFoundError } from "../../src/utils/errors/notfound.error.js";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../../src/utils/errors/http.errors.js";
 
 const {
   dynamoSendMock,

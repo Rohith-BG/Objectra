@@ -5,8 +5,7 @@ import {
   validateFoldername,
   validateParentId,
 } from "../../src/folders/folder.validation.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
-import { ValidationError } from "../../src/utils/errors/validation.error.js";
+import { BadRequestError, ValidationError } from "../../src/utils/errors/http.errors.js";
 
 describe("folder validation", () => {
   describe("validateFoldername", () => {

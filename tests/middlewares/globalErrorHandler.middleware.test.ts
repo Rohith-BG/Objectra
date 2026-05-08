@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
 import { globalErrorHandler } from "../../src/middlewares/globalErrorHandler.middleware.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
+import { BadRequestError } from "../../src/utils/errors/http.errors.js";
 
 type MockResponse = Response & {
   status: ReturnType<typeof vi.fn>;

@@ -9,10 +9,7 @@ import type { Folder } from "../../src/folders/folder.types.js";
 import { UploadStatus, type Object as CloudObject } from "../../src/objects/object.types.js";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
 import { OBJECT_CACHE } from "../../src/utils/constants/cache.constants.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
-import { ConflictError } from "../../src/utils/errors/conflict.error.js";
-import { ForbiddenError } from "../../src/utils/errors/forbidden.error.js";
-import { NotFoundError } from "../../src/utils/errors/notfound.error.js";
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from "../../src/utils/errors/http.errors.js";
 import { StepFunctionExecutionError } from "../../src/utils/errors/stepFunctionExecution.error.js";
 
 const {

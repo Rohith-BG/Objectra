@@ -5,7 +5,7 @@ import {
   validateUpdatePasswordRequestBody,
   validateUserIdRequestQueryParam,
 } from "../../src/users/user.middlewares.js";
-import { ValidationError } from "../../src/utils/errors/validation.error.js";
+import { ValidationError } from "../../src/utils/errors/http.errors.js";
 
 const res = {} as Response;
 

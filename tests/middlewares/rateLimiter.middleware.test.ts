@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { RateLimiterMiddleware } from "../../src/middlewares/rateLimiter.js";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
-import { TooManyRequestsError } from "../../src/utils/errors/toomanyrequest.error.js";
+import { TooManyRequestsError } from "../../src/utils/errors/http.errors.js";
 
 type MockResponse = Response & {
   status: ReturnType<typeof vi.fn>;
@@ -106,7 +106,7 @@ describe("RateLimiterMiddleware", () => {
     expect(res.setHeader).toHaveBeenCalledWith("X-RateLimit-Reset", 30);
     expect(res.setHeader).toHaveBeenCalledWith("Retry-After", 30);
     expect(res.locals.log.error).toMatchObject({
-      name: "TooManyRequests",
+      name: "TooManyRequestsError",
       message: "Too many requests",
       isOperational: true,
     });

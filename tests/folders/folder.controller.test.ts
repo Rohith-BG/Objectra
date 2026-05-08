@@ -2,7 +2,7 @@ import type { NextFunction, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
 import type { UserRole } from "../../src/users/user.type.js";
-import { BadRequestError } from "../../src/utils/errors/badrequest.error.js";
+import { BadRequestError } from "../../src/utils/errors/http.errors.js";
 
 const {
   createFolderServiceMock,

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {} from "../../src/types/express.type.js";
 import type { CanonicalLogContext } from "../../src/types/canonicalLog.types.js";
 import { authenticateUser } from "../../src/middlewares/authenticateUser.js";
-import { UnauthorizedError } from "../../src/utils/errors/unauthorized.error.js";
+import { UnauthorizedError } from "../../src/utils/errors/http.errors.js";
 
 const { verifyTokenMock } = vi.hoisted(() => ({
   verifyTokenMock: vi.fn(),
