@@ -3,7 +3,7 @@ import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
 import { UnauthorizedError } from "../utils/errors/unauthorized.error.js";
 import { verifyToken } from "../utils/jwt/jwt.utils.js";
 
-export async function authenticateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+export function authenticateUser(req: Request, res: Response, next: NextFunction): void {
   const ctx = res.locals["log"] as CanonicalLogContext | undefined;
 
   try {
