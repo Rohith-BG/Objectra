@@ -27,6 +27,16 @@ export interface ObjectRequestBody {
     name: string
 }
 
+export interface PutObjectPresignedURLResponse {
+    objectId: ObjectId,
+    presignedURL: PresignedURL
+}
+
+export interface CompleteObjectUploadResponse {
+    objectId: ObjectId,
+    status: UploadStatus.uploaded
+}
+
 export interface FolderIdCursorQueryParam extends ParsedQs {
     id: string,
     cursor?: string

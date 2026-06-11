@@ -1,9 +1,10 @@
-import { ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
+import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   DescribeExecutionCommand,
   StartExecutionCommand,
 } from "@aws-sdk/client-sfn";
-import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Folder } from "../../src/folders/folder.types.js";
 import { UploadStatus, type Object as CloudObject } from "../../src/objects/object.types.js";
@@ -26,6 +27,7 @@ const {
   redisGetMock,
   redisSetMock,
   releaseLockMock,
+  s3SendMock,
   sleepMock,
   stepFunctionSendMock,
   toExecutionStatusMock,
@@ -43,6 +45,7 @@ const {
   redisGetMock: vi.fn(),
   redisSetMock: vi.fn(),
   releaseLockMock: vi.fn(),
+  s3SendMock: vi.fn(),
   sleepMock: vi.fn(),
   stepFunctionSendMock: vi.fn(),
   toExecutionStatusMock: vi.fn(),
@@ -57,6 +60,12 @@ vi.mock("../../src/configs/dynamoDb.client.js", () => ({
 vi.mock("../../src/configs/stepFunction.client.js", () => ({
   default: {
     send: stepFunctionSendMock,
+  },
+}));
+
+vi.mock("../../src/configs/S3Bucket.client.js", () => ({
+  default: {
+    send: s3SendMock,
   },
 }));
 
@@ -105,6 +114,7 @@ vi.mock("../../src/utils/helpers/stepFunction.helpers.js", () => ({
 }));
 
 import {
+  completeObjectUploadById,
   deleteObjectById,
   fetchPendingObjectsByFolderId,
   getObjectPresignedURL,
@@ -162,6 +172,10 @@ function stepFunctionCommandAt<TInput = Record<string, unknown>>(
   return stepFunctionSendMock.mock.calls[index]?.[0] as CommandWithInput<TInput>;
 }
 
+function s3CommandAt<TInput = Record<string, unknown>>(index: number): CommandWithInput<TInput> {
+  return s3SendMock.mock.calls[index]?.[0] as CommandWithInput<TInput>;
+}
+
 describe("object service", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -170,6 +184,7 @@ describe("object service", () => {
     process.env.FOLDER_NAME_INDEX = "FolderNameIndex";
     process.env.FOLDERID_INDEX = "FolderIdIndex";
     process.env.AWS_STEPFUNCTION_ARN = "arn:aws:states:local:123:stateMachine:deleteObject";
+    process.env.BUCKET_NAME = "test-bucket";
 
     acquireLockMock.mockResolvedValue("lock-value");
     computeDurationMock.mockImplementation(
@@ -188,6 +203,7 @@ describe("object service", () => {
     redisGetMock.mockResolvedValue(null);
     redisSetMock.mockResolvedValue("OK");
     releaseLockMock.mockResolvedValue(true);
+    s3SendMock.mockResolvedValue({});
     sleepMock.mockResolvedValue(undefined);
     stepFunctionSendMock.mockResolvedValue({});
     toExecutionStatusMock.mockImplementation((raw: string | undefined) => {
@@ -210,7 +226,10 @@ describe("object service", () => {
         ctx,
       );
 
-      expect(result).toBe("https://put-url.test");
+      expect(result).toStrictEqual({
+        objectId: "Object@random-id",
+        presignedURL: "https://put-url.test",
+      });
       expect(getFolderByIdMock).toHaveBeenNthCalledWith(
         1,
         "Folder@123",
@@ -263,7 +282,10 @@ describe("object service", () => {
 
       await expect(
         getPutObjectPresignedURL("image.png", "Folder@123", ["Folder@123"]),
-      ).resolves.toBe("https://put-url.test");
+      ).resolves.toStrictEqual({
+        objectId: "Object@123",
+        presignedURL: "https://put-url.test",
+      });
 
       expect(dynamoSendMock).toHaveBeenCalledTimes(1);
       expect(generatePutObjectPresignedURLMock).toHaveBeenCalledWith("existing-key");
@@ -328,6 +350,99 @@ describe("object service", () => {
         "lock:putObject:Folder@123:image.png",
         "lock-value",
       );
+    });
+  });
+
+  describe("completeObjectUploadById", () => {
+    it("verifies the object exists in S3, marks it uploaded, and clears cached object data", async () => {
+      const ctx = createLogContext();
+      const object = makeObject({ status: UploadStatus.pending, key: "image.png@key" });
+      redisGetMock.mockResolvedValueOnce(JSON.stringify(object));
+
+      await expect(
+        completeObjectUploadById("Object@123", ["Folder@123"], ctx),
+      ).resolves.toStrictEqual({
+        objectId: "Object@123",
+        status: UploadStatus.uploaded,
+      });
+
+      expect(s3CommandAt(0)).toBeInstanceOf(HeadObjectCommand);
+      expect(s3CommandAt(0).input).toStrictEqual({
+        Bucket: "test-bucket",
+        Key: "image.png@key",
+      });
+      expect(dynamoCommandAt(0)).toBeInstanceOf(UpdateCommand);
+      expect(dynamoCommandAt(0).input).toStrictEqual({
+        TableName: "ObjectsTable",
+        Key: {
+          id: "Object@123",
+        },
+        UpdateExpression: "SET #status = :uploaded, #updatedAt = :updatedAt",
+        ConditionExpression: "attribute_exists(id) AND #status IN (:pending, :uploaded)",
+        ExpressionAttributeNames: {
+          "#status": "status",
+          "#updatedAt": "updatedAt",
+        },
+        ExpressionAttributeValues: {
+          ":uploaded": UploadStatus.uploaded,
+          ":pending": UploadStatus.pending,
+          ":updatedAt": expect.any(String),
+        },
+      });
+      expect(redisDelMock).toHaveBeenCalledWith("Object@123");
+      expect(redisDelMock).toHaveBeenCalledWith(OBJECT_CACHE.GET_OBJECT_PRESIGNED_URL("Object@123"));
+      expect(ctx.operations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "headObject", result: "success" }),
+          expect.objectContaining({ name: "completeObjectUpload", result: "success" }),
+        ]),
+      );
+    });
+
+    it("does not update DynamoDB when the object does not exist in S3", async () => {
+      const object = makeObject({ status: UploadStatus.pending, key: "missing-key" });
+      redisGetMock.mockResolvedValueOnce(JSON.stringify(object));
+      s3SendMock.mockRejectedValueOnce(
+        Object.assign(new Error("missing object"), {
+          name: "NotFound",
+          $metadata: { httpStatusCode: 404 },
+        }),
+      );
+
+      await expect(
+        completeObjectUploadById("Object@123", ["Folder@123"]),
+      ).rejects.toThrow("Cannot complete upload as object not exists in the bucket");
+
+      expect(s3CommandAt(0)).toBeInstanceOf(HeadObjectCommand);
+      expect(dynamoSendMock).not.toHaveBeenCalled();
+      expect(redisDelMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects objects that are not pending or uploaded", async () => {
+      const object = makeObject({ status: "DELETING" });
+      redisGetMock.mockResolvedValueOnce(JSON.stringify(object));
+
+      await expect(
+        completeObjectUploadById("Object@123", ["Folder@123"]),
+      ).rejects.toThrow(BadRequestError);
+
+      expect(s3SendMock).not.toHaveBeenCalled();
+      expect(dynamoSendMock).not.toHaveBeenCalled();
+    });
+
+    it("maps conditional update failures to conflict errors", async () => {
+      const object = makeObject({ status: UploadStatus.pending, key: "image.png@key" });
+      redisGetMock.mockResolvedValueOnce(JSON.stringify(object));
+      dynamoSendMock.mockRejectedValueOnce(
+        new ConditionalCheckFailedException({ message: "status changed", $metadata: {} }),
+      );
+
+      await expect(
+        completeObjectUploadById("Object@123", ["Folder@123"]),
+      ).rejects.toThrow(ConflictError);
+
+      expect(s3CommandAt(0)).toBeInstanceOf(HeadObjectCommand);
+      expect(redisDelMock).not.toHaveBeenCalled();
     });
   });
 

@@ -5,6 +5,7 @@ import type { UserRole } from "../../src/users/user.type.js";
 import { BadRequestError, ValidationError } from "../../src/utils/errors/http.errors.js";
 
 const {
+  completeObjectUploadByIdMock,
   deleteObjectByIdMock,
   fetchPendingObjectsByFolderIdMock,
   getObjectPresignedURLMock,
@@ -12,6 +13,7 @@ const {
   getPutObjectPresignedURLMock,
   getUploadedObjectsByFolderIdMock,
 } = vi.hoisted(() => ({
+  completeObjectUploadByIdMock: vi.fn(),
   deleteObjectByIdMock: vi.fn(),
   fetchPendingObjectsByFolderIdMock: vi.fn(),
   getObjectPresignedURLMock: vi.fn(),
@@ -21,6 +23,7 @@ const {
 }));
 
 vi.mock("../../src/objects/object.service.js", () => ({
+  completeObjectUploadById: completeObjectUploadByIdMock,
   deleteObjectById: deleteObjectByIdMock,
   fetchPendingObjectsByFolderId: fetchPendingObjectsByFolderIdMock,
   getObjectPresignedURL: getObjectPresignedURLMock,
@@ -30,6 +33,7 @@ vi.mock("../../src/objects/object.service.js", () => ({
 }));
 
 import {
+  completeObjectUpload,
   deleteObject,
   getObjectFromS3,
   getPendingObjectByFolder,
@@ -91,7 +95,8 @@ describe("object controller", () => {
 
   describe("uploadObjectToS3", () => {
     it("validates body, passes allowed folders, and responds with a put presigned URL", async () => {
-      getPutObjectPresignedURLMock.mockResolvedValue("https://put-url.test");
+      const payload = { objectId: "Object@123", presignedURL: "https://put-url.test" };
+      getPutObjectPresignedURLMock.mockResolvedValue(payload);
       const req = {
         body: { folderId: "  Folder@123  ", name: "  image.png  " },
         user: mockUser(["Folder@123"]),
@@ -109,7 +114,7 @@ describe("object controller", () => {
       );
       expect(res.locals.log.resourceIds).toStrictEqual({ folderId: "Folder@123" });
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith("https://put-url.test");
+      expect(res.json).toHaveBeenCalledWith(payload);
       expect(next).not.toHaveBeenCalled();
     });
 
@@ -156,6 +161,59 @@ describe("object controller", () => {
       const next = vi.fn();
 
       await uploadObjectToS3(mockRequest<typeof uploadObjectToS3>(req), res, next as NextFunction);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("completeObjectUpload", () => {
+    it("validates body object id, passes allowed folders, and responds with completed status", async () => {
+      const payload = { objectId: "Object@123", status: "UPLOADED" };
+      completeObjectUploadByIdMock.mockResolvedValue(payload);
+      const req = {
+        body: { objectId: "  Object@123  " },
+        user: mockUser(["Folder@123"], "WRITE_ONLY"),
+      };
+      const res = createMockResponse();
+      const next = vi.fn();
+
+      await completeObjectUpload(mockRequest<typeof completeObjectUpload>(req), res, next as NextFunction);
+
+      expect(completeObjectUploadByIdMock).toHaveBeenCalledWith(
+        "Object@123",
+        ["Folder@123"],
+        res.locals.log,
+      );
+      expect(res.locals.log.resourceIds).toStrictEqual({ objectId: "Object@123" });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(payload);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("passes validation errors to next without calling the service", async () => {
+      const req = { body: {}, user: mockUser(["Folder@123"]) };
+      const res = createMockResponse();
+      const next = vi.fn();
+
+      await completeObjectUpload(mockRequest<typeof completeObjectUpload>(req), res, next as NextFunction);
+
+      expect(completeObjectUploadByIdMock).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(BadRequestError));
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("passes service errors to next", async () => {
+      const error = new Error("completion failed");
+      completeObjectUploadByIdMock.mockRejectedValue(error);
+      const req = {
+        body: { objectId: "Object@123" },
+        user: mockUser(["Folder@123"]),
+      };
+      const res = createMockResponse();
+      const next = vi.fn();
+
+      await completeObjectUpload(mockRequest<typeof completeObjectUpload>(req), res, next as NextFunction);
 
       expect(next).toHaveBeenCalledWith(error);
       expect(res.status).not.toHaveBeenCalled();

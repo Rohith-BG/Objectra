@@ -1,7 +1,7 @@
 import { GetCommand, PutCommand, QueryCommand, UpdateCommand, type GetCommandInput, type GetCommandOutput, type QueryCommandInput, type QueryCommandOutput, type UpdateCommandInput, type UpdateCommandOutput } from "@aws-sdk/lib-dynamodb";
 import type { Cursor, Folder, FolderId } from "../folders/folder.types.js";
 import RandomIdGenerator from "../utils/helpers/create-randomId.helper.js";
-import { UploadStatus, type Object, type ObjectId, type ObjectName, type PresignedURL } from "./object.types.js";
+import { UploadStatus, type CompleteObjectUploadResponse, type Object, type ObjectId, type ObjectName, type PresignedURL, type PutObjectPresignedURLResponse } from "./object.types.js";
 import DynamoDbClient from "../configs/dynamoDb.client.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../utils/errors/http.errors.js";
 import { getFolderById } from "../folders/folder.service.js";
@@ -15,10 +15,12 @@ import { computeDuration, sleep, toExecutionStatus } from "../utils/helpers/step
 import { StepFunctionExecutionError } from "../utils/errors/stepFunctionExecution.error.js";
 import RedisClient from "../configs/redis.client.js";
 import { OBJECT_CACHE } from "../utils/constants/cache.constants.js";
-import { ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
+import { ConditionalCheckFailedException, ResourceNotFoundException } from "@aws-sdk/client-dynamodb";
 import { assertFolderAccess } from "../utils/helpers/folder.helper.js";
 import { acquireLock, releaseLock } from "../utils/helpers/redisLock.helper.js";
 import type { CanonicalLogContext } from "../types/canonicalLog.types.js";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import s3Client from "../configs/S3Bucket.client.js";
 
 async function createObject(objectName: ObjectName, folderId: FolderId, ctx?: CanonicalLogContext): Promise<Object> {
     try {
@@ -174,7 +176,13 @@ async function findObjectByNameAndFolder(
     return null;
 }
 
-export async function getPutObjectPresignedURL(objectName: ObjectName, folderId: FolderId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<PresignedURL> {
+function isS3ObjectNotFoundError(err: unknown): boolean {
+    const error = err as { name?: string, $metadata?: { httpStatusCode?: number } };
+
+    return error?.name === "NotFound" || error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404;
+}
+
+export async function getPutObjectPresignedURL(objectName: ObjectName, folderId: FolderId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<PutObjectPresignedURLResponse> {
     const lockKey = `lock:putObject:${folderId}:${objectName}`;
     let lockValue: string | null = null;
 
@@ -214,6 +222,10 @@ export async function getPutObjectPresignedURL(objectName: ObjectName, folderId:
         lockValue = null;
 
         const presignedUrlStart = performance.now();
+        if (!object?.id) {
+            throw new BadRequestError(`ObjectId is undefined,presignedURL cannot be genearated without objectId`)
+        }
+
         const putObjectPresignedURL = await generatePutObjectPresignedURL(object?.key)
 
         if (ctx) {
@@ -222,7 +234,10 @@ export async function getPutObjectPresignedURL(objectName: ObjectName, folderId:
             ctx.operations.push({ name: "generatePutPresignedUrl", result: "success", durationMs: Math.round(performance.now() - presignedUrlStart) });
         }
 
-        return putObjectPresignedURL;
+        return {
+            objectId: object.id,
+            presignedURL: putObjectPresignedURL
+        };
     }
     catch (err: any) {
         throw err;
@@ -231,6 +246,87 @@ export async function getPutObjectPresignedURL(objectName: ObjectName, folderId:
         if (lockValue) {
             await releaseLock(lockKey, lockValue).catch(() => { });
         }
+    }
+}
+
+export async function completeObjectUploadById(objectId: ObjectId, allowedFolders: string[] | undefined, ctx?: CanonicalLogContext): Promise<CompleteObjectUploadResponse> {
+    try {
+        const object: Object = await getObjectById(objectId, allowedFolders, ctx)
+
+        if (object?.status !== UploadStatus.pending && object?.status !== UploadStatus.uploaded) {
+            throw new BadRequestError(`Object upload cannot be completed from current status`)
+        }
+
+        if (!object?.key) {
+            throw new BadRequestError(`ObjectKey is undefined,upload cannot be completed without objectKey`)
+        }
+
+        const headObjectStart = performance.now();
+
+        try {
+            await s3Client.send(new HeadObjectCommand({
+                Bucket: process.env.BUCKET_NAME,
+                Key: object.key
+            }))
+
+            if (ctx) {
+                ctx.operations.push({ name: "headObject", result: "success", durationMs: Math.round(performance.now() - headObjectStart) });
+            }
+        }
+        catch (err: unknown) {
+            if (ctx) {
+                ctx.operations.push({ name: "headObject", result: "failure", durationMs: Math.round(performance.now() - headObjectStart) });
+            }
+
+            if (isS3ObjectNotFoundError(err)) {
+                throw new BadRequestError(`Cannot complete upload as object not exists in the bucket`)
+            }
+
+            throw err
+        }
+
+        const updateObjectStart = performance.now();
+
+        await DynamoDbClient.send(new UpdateCommand({
+            TableName: process.env.OBJECTS_TABLE,
+            Key: {
+                id: objectId
+            },
+            UpdateExpression: "SET #status = :uploaded, #updatedAt = :updatedAt",
+            ConditionExpression: "attribute_exists(id) AND #status IN (:pending, :uploaded)",
+            ExpressionAttributeNames: {
+                "#status": "status",
+                "#updatedAt": "updatedAt"
+            },
+            ExpressionAttributeValues: {
+                ":uploaded": UploadStatus.uploaded,
+                ":pending": UploadStatus.pending,
+                ":updatedAt": new Date().toISOString()
+            }
+        }))
+
+        await RedisClient.del(objectId)
+        await RedisClient.del(OBJECT_CACHE.GET_OBJECT_PRESIGNED_URL(objectId))
+
+        if (ctx) {
+            ctx.db = ctx.db ?? { queriesExecuted: 0, totalDbDurationMs: 0 };
+            ctx.db.queriesExecuted += 1;
+            const durationMs = Math.round(performance.now() - updateObjectStart);
+            ctx.db.totalDbDurationMs += durationMs;
+            ctx.operations.push({ name: "completeObjectUpload", result: "success", durationMs });
+        }
+
+        return {
+            objectId,
+            status: UploadStatus.uploaded
+        }
+    }
+    catch (err: unknown) {
+        if (err instanceof ConditionalCheckFailedException) {
+            throw new ConflictError(`Object upload status cannot be completed from its current state`)
+        }
+
+        throw err
     }
 }
 

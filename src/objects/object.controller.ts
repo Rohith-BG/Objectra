@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { validateObjectId, validateObjectName } from "./object.validation.js";
 import { validateCursor, validateFolderId } from "../folders/folder.validation.js";
-import { deleteObjectById,fetchPendingObjectsByFolderId, getObjectPresignedURL, getPresignedUrlForPendingUploads, getPutObjectPresignedURL, getUploadedObjectsByFolderId} from "./object.service.js";
+import { completeObjectUploadById, deleteObjectById,fetchPendingObjectsByFolderId, getObjectPresignedURL, getPresignedUrlForPendingUploads, getPutObjectPresignedURL, getUploadedObjectsByFolderId} from "./object.service.js";
 import type { FolderIdCursorQueryParam,ObjectId,ObjectIdQueryParam, ObjectName, } from "./object.types.js";
 import type { Cursor, FolderId } from "../folders/folder.types.js";
 import { STATUSCODE } from "../utils/constants/statusCodes.js";
@@ -25,6 +25,27 @@ export async function uploadObjectToS3(req:Request,res:Response,next:NextFunctio
         const presignedURL = await getPutObjectPresignedURL(objectName,folderId,allowedFolders, ctx)
 
         res.status(STATUSCODE?.OK).json(presignedURL)
+    }
+    catch(err){
+        next(err);
+    }
+}
+
+export async function completeObjectUpload(req:Request,res:Response,next:NextFunction){
+    const ctx = res.locals["log"] as CanonicalLogContext | undefined;
+
+    try{
+        const objectId : ObjectId = validateObjectId(req?.body?.objectId)
+
+        const allowedFolders : string[] | undefined = req.user?.allowedFolders
+
+        if (ctx) {
+            ctx.resourceIds = { ...ctx.resourceIds, objectId };
+        }
+
+        const completedObject = await completeObjectUploadById(objectId,allowedFolders, ctx)
+
+        res.status(STATUSCODE.OK).json(completedObject)
     }
     catch(err){
         next(err);
