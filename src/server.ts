@@ -2,7 +2,59 @@ import app from "./app.js"
 import dotenv from "dotenv"
 import RedisClient from "./configs/redis.client.js";
 import { logger } from "./configs/logger.js";
+import type { Server } from "node:http";
 dotenv.config();
+
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+let server: Server | undefined;
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal: NodeJS.Signals) {
+    if (isShuttingDown) {
+        return;
+    }
+
+    isShuttingDown = true;
+
+    logger.info({ signal }, "Graceful shutdown started")
+
+    const shutdownTimer = setTimeout(() => {
+        logger.error({ signal }, "Graceful shutdown timed out")
+        server?.closeAllConnections?.();
+        process.exit(1)
+    }, SHUTDOWN_TIMEOUT_MS)
+
+    shutdownTimer.unref()
+
+    try {
+        if (server) {
+            await new Promise<void>((resolve, reject) => {
+                server?.close((err?: Error) => {
+                    if (err) {
+                        reject(err)
+                        return;
+                    }
+
+                    resolve()
+                })
+
+                server?.closeIdleConnections?.();
+            })
+        }
+
+        await RedisClient.quit()
+
+        clearTimeout(shutdownTimer)
+
+        logger.info({ signal }, "Graceful shutdown completed")
+        process.exit(0)
+    }
+    catch (error: any) {
+        clearTimeout(shutdownTimer)
+        logger.error({ err: error, signal }, "Graceful shutdown failed")
+        process.exit(1)
+    }
+}
 
 async function startServer() {
     try {
@@ -14,7 +66,7 @@ async function startServer() {
 
         logger.info(`Redis Connnected`)
 
-        app.listen(process.env.PORT, () => {
+        server = app.listen(process.env.PORT, () => {
             logger.info(`Server started running on the port:${process.env.PORT}`)
         })
     }
@@ -25,6 +77,10 @@ async function startServer() {
 }
 
 startServer()
+
+process.on("SIGTERM", () => {
+    void gracefulShutdown("SIGTERM")
+})
 
 
 /*
